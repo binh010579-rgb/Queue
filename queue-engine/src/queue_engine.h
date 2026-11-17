@@ -20,7 +20,6 @@
 
 #include <sstream>
 #include <string>
-using namespace std;
 
 // ============================================================
 // Node: một phần tử trong hàng đợi
@@ -133,8 +132,8 @@ private:
 
     // Id hợp lệ: toàn chữ số, nằm trong khoảng 1 đến 2147483647.
     // Hợp lệ thì gán vào ketQua và trả true.
-    bool laIdHopLe(string chuoi, int& ketQua) {
-        // Chuỗi rỗng hoặc dài quá 10 ký tự thì chắc chắn sai
+    bool laIdHopLe(std::string chuoi, int& ketQua) {
+        // Chuỗi rỗng thì chắc chắn sai
         if (chuoi.empty()) {
             return false;
         }
@@ -160,7 +159,7 @@ private:
     }
 
     // ---------- ENQ ----------
-    string xuLyENQ(string chuoiId) {
+    std::string xuLyENQ(std::string chuoiId) {
         int id;
         if (laIdHopLe(chuoiId, id) == false) {
             return "ERR BAD_ID";
@@ -171,45 +170,45 @@ private:
     }
 
     // ---------- DEQ ----------
-    string xuLyDEQ() {
+    std::string xuLyDEQ() {
         int id;
         if (hangDoi.dequeue(id) == false) {
             return "EMPTY";
         }
-        return "ID " + to_string(id);
+        return "ID " + std::to_string(id);
     }
 
     // ---------- PEEK ----------
-    string xuLyPEEK() {
+    std::string xuLyPEEK() {
         int id;
         if (hangDoi.peek(id) == false) {
             return "EMPTY";
         }
-        return "ID " + to_string(id);
+        return "ID " + std::to_string(id);
     }
 
     // ---------- SIZE ----------
-    string xuLySIZE() {
-        return "SIZE " + to_string(hangDoi.getSize());
+    std::string xuLySIZE() {
+        return "SIZE " + std::to_string(hangDoi.getSize());
     }
 
     // ---------- CLEAR ----------
-    string xuLyCLEAR() {
+    std::string xuLyCLEAR() {
         hangDoi.clear();
         return "OK";
     }
 
 public:
     // Hàm duy nhất bên ngoài cần gọi: nhận một dòng lệnh, trả về một dòng kết quả
-    string xuLyLenh(string dong) {
+    std::string xuLyLenh(std::string dong) {
         // File lệnh từ Windows có thêm ký tự '\r' cuối dòng, bỏ nó đi
         if (dong.empty() == false && dong.back() == '\r') {
             dong.pop_back();
         }
         // Tách dòng thành các từ, ví dụ "ENQ 5" -> lenh = "ENQ", thamSo = "5"
         // "thua" dùng để phát hiện gõ thừa từ (ví dụ "ENQ 5 6")
-        istringstream tachTu(dong);
-        string lenh, thamSo, thua;
+        std::istringstream tachTu(dong);
+        std::string lenh, thamSo, thua;
         tachTu >> lenh >> thamSo >> thua;
         // ENQ phải có đúng 1 tham số
         if (lenh == "ENQ") {
