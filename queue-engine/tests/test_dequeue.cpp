@@ -40,9 +40,8 @@ void kiemTraLenh(QueueEngine& e, const string& lenh, const string& mongDoi) {
             "Lenh \"" + lenh + "\" -> " + mongDoi + " (nhan duoc: " + ketQua + ")");
 }
 
-// ------------------------------------------------------------
 // 1. Hang rong
-// ------------------------------------------------------------
+// 
 void testHangRong() {
     cout << "--- Dequeue: hang rong ---" << endl;
     Queue q;
@@ -54,10 +53,8 @@ void testHangRong() {
     kiemTra(q.dequeue(id) == false, "Hang rong: dequeue lan 2 van tra false, khong loi");
     kiemTra(q.peek(id) == false, "Hang rong: peek van tra false");
 }
-
-// ------------------------------------------------------------
 // 2. Hang co dung 1 phan tu
-// ------------------------------------------------------------
+// 
 void testMotPhanTu() {
     cout << "--- Dequeue: hang co 1 phan tu ---" << endl;
     Queue q;
@@ -74,9 +71,8 @@ void testMotPhanTu() {
     kiemTra(q.dequeue(id) == false, "1 phan tu: lay lan 2 tra false");
 }
 
-// ------------------------------------------------------------
 // 3. Hang co nhieu phan tu: dung thu tu FIFO
-// ------------------------------------------------------------
+// 
 void testNhieuPhanTu() {
     cout << "--- Dequeue: hang co nhieu phan tu ---" << endl;
     Queue q;
@@ -101,9 +97,8 @@ void testNhieuPhanTu() {
     kiemTra(lay(q) == -1, "Nhieu: lay them mot lan nua thi bao rong");
 }
 
-// ------------------------------------------------------------
 // 4. Dequeue xen ke enqueue
-// ------------------------------------------------------------
+// 
 void testXenKe() {
     cout << "--- Dequeue: xen ke voi enqueue ---" << endl;
     Queue q;
@@ -120,9 +115,8 @@ void testXenKe() {
     kiemTra(q.isEmpty() && q.getSize() == 0, "Xen ke: cuoi cung hang rong, size = 0");
 }
 
-// ------------------------------------------------------------
 // 5. Lay het roi them lai (kiem tra rear da ve nullptr)
-// ------------------------------------------------------------
+//
 void testLayHetRoiThemLai() {
     cout << "--- Dequeue: lay het roi them lai ---" << endl;
     Queue q;
@@ -148,10 +142,8 @@ void testLayHetRoiThemLai() {
     kiemTra(lay(q) == 8, "Them lai sau khi lay het: ra 8");
     kiemTra(lay(q) == 9, "Them lai sau khi lay het: ra 9");
 }
-
-// ------------------------------------------------------------
 // 6. Lenh DEQ qua giao thuc
-// ------------------------------------------------------------
+// 
 void testLenhDEQ() {
     cout << "--- Lenh DEQ qua giao thuc ---" << endl;
     {
@@ -196,10 +188,8 @@ void testLenhDEQ() {
         kiemTraLenh(e, "DEQ\r", "EMPTY");               // cuoi dong kieu Windows
     }
 }
-
-// ------------------------------------------------------------
 // 7. Hang lon: dung voi ASan de bat ro ri bo nho
-// ------------------------------------------------------------
+// 
 void testHangLon() {
     cout << "--- Dequeue: 100.000 phan tu ---" << endl;
     const int N = 100000;
