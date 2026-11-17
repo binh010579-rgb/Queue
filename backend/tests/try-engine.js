@@ -1,13 +1,13 @@
 'use strict';
 
 // Chạy thử độc lập, không cần Database / Express.
-// Cách chạy (trong thư mục backend/):  node try-engine.js
+// Cách chạy (trong thư mục backend/):  node tests/try-engine.js
 
 const path = require('path');
-const { QueueEngineClient } = require('./queueEngineClient');
+const { QueueEngineClient } = require('../src/queueEngineClient');
 
 const exe = process.platform === 'win32' ? 'queue_engine.exe' : 'queue_engine';
-const enginePath = path.join(__dirname, '..', 'queue-engine', exe);
+const enginePath = path.join(__dirname, '..', '..', 'queue-engine', exe);
 
 // Giả lập các đơn PENDING lấy từ Database (đã đúng thứ tự created_at, id)
 const fakePending = [5, 6, 7];
