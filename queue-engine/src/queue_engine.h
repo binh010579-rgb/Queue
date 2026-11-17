@@ -135,7 +135,7 @@ private:
     // Hợp lệ thì gán vào ketQua và trả true.
     bool laIdHopLe(string chuoi, int& ketQua) {
         // Chuỗi rỗng hoặc dài quá 10 ký tự thì chắc chắn sai
-        if (chuoi.empty() || chuoi.size() > 10) {
+        if (chuoi.empty()) {
             return false;
         }
         // Duyệt từng ký tự, chỉ chấp nhận chữ số từ '0' đến '9'
@@ -147,6 +147,9 @@ private:
                 return false;                          // gặp chữ cái hoặc dấu '-' là sai
             }
             giaTri = giaTri * 10 + (kyTu - '0');       // ghép từng chữ số thành số
+            if (giaTri > 2147483647){            // kiểm tra vượt ngưỡng
+                return false;
+            }
         }
         // Id phải từ 1 trở lên và không vượt quá giới hạn của kiểu int
         if (giaTri < 1 || giaTri > 2147483647) {
