@@ -227,4 +227,3 @@ int main() {
     cout << endl << "=== TONG KET: " << soDat << "/" << soTest << " test dat ===" << endl;
     return (soDat == soTest) ? 0 : 1;
 }
-
