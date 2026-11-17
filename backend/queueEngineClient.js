@@ -48,6 +48,7 @@ class QueueEngineClient {
   /**
    * @param {object}   opts
    * @param {string}   opts.enginePath      đường dẫn file chạy (vd ./queue_engine hoặc ./queue_engine.exe)
+   * @param {string[]} [opts.engineArgs]    tham số dòng lệnh truyền cho Engine (mặc định: không có)
    * @param {Function} opts.getPendingIds   async () => number[]  (đơn PENDING, đúng thứ tự) - TV3
    * @param {number}   [opts.timeoutMs]     thời gian chờ mỗi phản hồi
    * @param {number}   [opts.startupTimeoutMs] thời gian chờ dòng READY
@@ -55,6 +56,7 @@ class QueueEngineClient {
    */
   constructor({
     enginePath,
+    engineArgs = [],
     getPendingIds,
     timeoutMs = 3000,
     startupTimeoutMs = 5000,
@@ -64,6 +66,7 @@ class QueueEngineClient {
     if (!enginePath) throw new Error('Thiếu enginePath');
     if (typeof getPendingIds !== 'function') throw new Error('Thiếu getPendingIds');
     this.enginePath = enginePath;
+    this.engineArgs = engineArgs;
     this.getPendingIds = getPendingIds;
     this.timeoutMs = timeoutMs;
     this.startupTimeoutMs = startupTimeoutMs;
@@ -266,7 +269,7 @@ class QueueEngineClient {
 
   _spawnEngine() {
     return new Promise((resolve, reject) => {
-      const proc = spawn(this.enginePath, [], { stdio: ['pipe', 'pipe', 'inherit'] });
+      const proc = spawn(this.enginePath, this.engineArgs, { stdio: ['pipe', 'pipe', 'inherit'] });
       this._proc = proc;
 
       const rl = readline.createInterface({ input: proc.stdout });
@@ -287,4 +290,3 @@ class QueueEngineClient {
 }
 
 module.exports = { QueueEngineClient, EngineError };
-
