@@ -1,28 +1,3 @@
-// ============================================================
-// test_dequeue.cpp - Kiem thu DEQUEUE (TV2, du an BeautyStore)
-//
-// Kiem thu ham Queue::dequeue va lenh DEQ cua QueueEngine:
-//   1. Hang rong
-//   2. Hang co 1 phan tu (front va rear cung ve nullptr)
-//   3. Hang co nhieu phan tu (thu tu FIFO)
-//   4. Dequeue xen ke voi enqueue
-//   5. Lay het roi them lai (chung minh rear da ve nullptr dung)
-//   6. Lenh DEQ qua giao thuc (QueueEngine)
-//   7. Hang lon 100.000 phan tu (dung voi ASan de bat ro ri bo nho)
-//
-// Ghi chu: front/rear la thanh vien private. De kiem tra truc tiep rang
-// dequeue phan tu cuoi dua CA front lan rear ve nullptr, file nay mo
-// private thanh public (chi trong file test, khong anh huong ma nguon).
-// Can lam vay vi enqueue kiem tra hang rong bang front roi gan lai rear,
-// nen neu rear bi "treo" thi khong the thay duoc qua cac ham cong khai.
-//
-// Bien dich (chay trong thu muc queue-engine/):
-//   g++ -std=c++17 -Wall -Wextra -o test_dequeue tests/test_dequeue.cpp
-// Kiem tra bo nho:
-//   g++ -std=c++17 -Wall -Wextra -fsanitize=address,undefined -g -o test_dequeue tests/test_dequeue.cpp
-// Dong cuoi phai la "=== TONG KET: X/X test dat ===", co test loi thi thoat ma 1.
-// ============================================================
-
 #include <iostream>
 #include <sstream>
 #include <string>
