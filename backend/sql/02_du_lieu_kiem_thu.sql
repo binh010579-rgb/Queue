@@ -1,11 +1,19 @@
--- Xóa dữ liệu cũ
+-- Chỉ chạy trên database kiểm thử
+DROP TEMPORARY TABLE IF EXISTS kiem_tra_database;
+CREATE TEMPORARY TABLE kiem_tra_database (
+  ten VARCHAR(64),
+  CONSTRAINT chi_chay_tren_database_test CHECK (RIGHT(ten, 5) = '_test')
+);
+INSERT INTO kiem_tra_database VALUES (DATABASE());
+DROP TEMPORARY TABLE kiem_tra_database;
+
+-- Xóa đơn hàng cũ
 SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE order_items;
 TRUNCATE TABLE orders;
-TRUNCATE TABLE products;
 SET FOREIGN_KEY_CHECKS = 1;
 
--- Thêm sản phẩm
+-- Thêm hoặc cập nhật sản phẩm
 INSERT INTO products (id, name, price, is_active) VALUES
 (1, 'Sữa rửa mặt dịu nhẹ Pure Clean',    289000, 1),
 (2, 'Nước cân bằng Rose Balance',        345000, 1),
@@ -15,7 +23,8 @@ INSERT INTO products (id, name, price, is_active) VALUES
 (6, 'Gel rửa mặt Matcha Fresh',          315000, 1),
 (7, 'Serum Vitamin C Bright Drop',       595000, 1),
 (8, 'Kem dưỡng Water Cream',             430000, 1),
-(9, 'Phấn phủ kiềm dầu (ngừng bán)',     210000, 0);
+(9, 'Phấn phủ kiềm dầu (ngừng bán)',     210000, 0) AS moi
+ON DUPLICATE KEY UPDATE name = moi.name, price = moi.price, is_active = moi.is_active;
 
 -- Thêm đơn hàng
 INSERT INTO orders (id, order_code, customer_name, customer_phone, customer_email, shipping_address, total_amount, status, created_at) VALUES

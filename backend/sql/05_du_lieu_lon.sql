@@ -1,4 +1,13 @@
--- Xóa dữ liệu cũ
+-- Chỉ chạy trên database kiểm thử
+DROP TEMPORARY TABLE IF EXISTS kiem_tra_database;
+CREATE TEMPORARY TABLE kiem_tra_database (
+  ten VARCHAR(64),
+  CONSTRAINT chi_chay_tren_database_test CHECK (RIGHT(ten, 5) = '_test')
+);
+INSERT INTO kiem_tra_database VALUES (DATABASE());
+DROP TEMPORARY TABLE kiem_tra_database;
+
+-- Xóa đơn hàng cũ
 SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE order_items;
 TRUNCATE TABLE orders;
