@@ -4,7 +4,6 @@ import {
   getOrdersByPhone,
   isValidPhone,
   normalizePhone,
-  processNextOrder,
   type Order,
   type OrderStatus,
 } from "./api";
@@ -380,23 +379,6 @@ export default function App() {
             </button>
           </nav>
         <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                try {
-                  const res = await processNextOrder();
-                  showToast(`Đã duyệt đơn #${res.orderId}`);
-                  if (page === "orders" && isValidPhone(ordersPhone)) {
-                    await loadOrders(ordersPhone);
-                  }
-                } catch (e) {
-                  showToast(e instanceof Error ? e.message : "Hàng đợi đang rỗng");
-                }
-              }}
-              className="flex items-center gap-2 rounded-full border border-[#eadadd] bg-white px-3 py-2.5 text-sm font-semibold text-[#29704b] shadow-[0_4px_20px_rgba(93,55,65,0.05)] transition hover:-translate-y-0.5 hover:border-[#29704b] sm:px-4"
-            >
-              <Icon name="check" size={18} />
-              <span className="hidden sm:inline">Duyệt đơn</span>
-            </button>
             <button
               onClick={() => navigate("orders")}
               className="flex items-center gap-2 rounded-full border border-[#eadadd] bg-white px-3 py-2.5 text-sm font-semibold shadow-[0_4px_20px_rgba(93,55,65,0.05)] transition hover:-translate-y-0.5 hover:border-[#ff9eb3] sm:px-4"
