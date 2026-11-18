@@ -4,7 +4,7 @@
 // Cách chạy (trong thư mục backend/):  node tests/try-engine.js
 
 const path = require('path');
-const { QueueEngineClient } = require('../src/queueEngineClient');
+const { QueueEngineClient } = require('../src/queue/queueEngineClient');
 
 const exe = process.platform === 'win32' ? 'queue_engine.exe' : 'queue_engine';
 const enginePath = path.join(__dirname, '..', '..', 'queue-engine', exe);
