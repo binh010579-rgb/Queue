@@ -1,6 +1,6 @@
 const express = require('express');
 const { AppError } = require('./errors');
-const { createOrderRouter } = require('./routes/orderRoutes');
+const { createOrderRouter, createAdminRouter } = require('./routes/orderRoutes');
 
 // Trả lỗi dạng JSON
 function sendError(res, status, code, message, details) {
@@ -26,6 +26,7 @@ function createApp({ orderService, logger = console, corsOrigin = '*' }) {
 
   // Routes
   app.use('/api/orders', createOrderRouter(orderService));
+  app.use('/api/admin', createAdminRouter(orderService));
 
   // Không tìm thấy route
   app.use((req, res) => sendError(res, 404, 'NOT_FOUND', 'Không tìm thấy đường dẫn'));
