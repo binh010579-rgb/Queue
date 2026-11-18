@@ -17,10 +17,10 @@ API theo đúng hợp đồng trong `frontend/src/api.ts` (gốc `http://127.0.0
 backend/
 ├── sql/
 │   ├── 01_tao_bang.sql              tạo bảng + nạp 8 sản phẩm của frontend
-│   ├── 02_du_lieu_kiem_thu.sql      16 đơn mẫu (XÓA dữ liệu cũ)
+│   ├── 02_du_lieu_kiem_thu.sql      16 đơn mẫu (XÓA đơn hàng cũ, chỉ chạy trên *_test)
 │   ├── 03_truy_van_pending.sql      truy vấn lọc + sắp xếp
 │   ├── 04_kiem_tra_thu_tu.sql       in PASS/FAIL thứ tự mong đợi
-│   ├── 05_du_lieu_lon.sql           200.000 đơn để đo EXPLAIN (XÓA dữ liệu cũ)
+│   ├── 05_du_lieu_lon.sql           200.000 đơn để đo EXPLAIN (XÓA đơn hàng cũ, chỉ chạy trên *_test)
 │   ├── 06_explain_truoc_chi_muc.sql xóa chỉ mục rồi EXPLAIN
 │   ├── 07_tao_chi_muc.sql           tạo chỉ mục (status, created_at, id)
 │   └── 08_explain_sau_chi_muc.sql   EXPLAIN sau khi có chỉ mục
@@ -54,27 +54,44 @@ Tạo database chính và database kiểm thử:
 mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS beautystore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE DATABASE IF NOT EXISTS beautystore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
 ```
 
+Các lệnh `source` dưới đây gõ **mỗi lệnh một dòng** tại dấu nhắc `mysql>`. Không gộp nhiều `source` vào một dòng hay vào `-e "..."`: client `mysql` chỉ nhận lệnh `source` ở đầu dòng, các `source` phía sau sẽ bị báo lỗi cú pháp.
+
 Database chính (để chạy web) chỉ cần tạo bảng và chỉ mục:
 
 ```bash
-mysql -u root -p --default-character-set=utf8mb4 beautystore -e "source sql/01_tao_bang.sql; source sql/07_tao_chi_muc.sql"
+mysql -u root -p --default-character-set=utf8mb4 beautystore
 ```
 
-Database kiểm thử: nạp 16 đơn mẫu, xem kết quả lọc/sắp xếp và kiểm tra thứ tự:
-
-```bash
-mysql -u root -p -t --default-character-set=utf8mb4 beautystore_test -e "source sql/01_tao_bang.sql; source sql/02_du_lieu_kiem_thu.sql; source sql/03_truy_van_pending.sql; source sql/04_kiem_tra_thu_tu.sql"
+```sql
+source sql/01_tao_bang.sql
+source sql/07_tao_chi_muc.sql
+exit
 ```
 
-Đo EXPLAIN trước/sau chỉ mục trên 200.000 đơn:
+Database kiểm thử: nạp 16 đơn mẫu, xem kết quả lọc/sắp xếp, kiểm tra thứ tự, rồi đo EXPLAIN trước/sau chỉ mục trên 200.000 đơn:
 
 ```bash
-mysql -u root -p -t --default-character-set=utf8mb4 beautystore_test -e "source sql/05_du_lieu_lon.sql; source sql/06_explain_truoc_chi_muc.sql; source sql/07_tao_chi_muc.sql; source sql/08_explain_sau_chi_muc.sql"
+mysql -u root -p --default-character-set=utf8mb4 beautystore_test
+```
+
+```sql
+source sql/01_tao_bang.sql
+source sql/02_du_lieu_kiem_thu.sql
+source sql/03_truy_van_pending.sql
+source sql/04_kiem_tra_thu_tu.sql
+source sql/05_du_lieu_lon.sql
+source sql/06_explain_truoc_chi_muc.sql
+source sql/07_tao_chi_muc.sql
+source sql/08_explain_sau_chi_muc.sql
+exit
 ```
 
 Cũng có thể mở từng file trong MySQL Workbench và bấm Execute.
 
-> ⚠️ `02_...` và `05_...` **xóa sạch** dữ liệu đơn hàng trước khi nạp. Chỉ chạy trên `beautystore_test`.
+> ⚠️ **`02_...` và `05_...` xóa toàn bộ đơn hàng** (bảng `orders` và `order_items`) trước khi nạp. `02_...` còn đưa tên và giá của sản phẩm 1–9 về giá trị mẫu (các sản phẩm khác giữ nguyên).
+> Hai file này chỉ chạy được trên database có tên kết thúc bằng `_test`. Chạy nhầm trên `beautystore` sẽ báo lỗi `Check constraint 'chi_chay_tren_database_test' is violated` và dừng **trước khi xóa** bất cứ thứ gì.
+> Trong MySQL Workbench, giữ bật nút *Stop script execution on errors* (mặc định đã bật) để script dừng khi gặp lỗi này.
+>
 > `01_tao_bang.sql` chạy lại nhiều lần vẫn an toàn: bảng đã có thì giữ nguyên, 8 sản phẩm được cập nhật lại tên và giá.
 
 ## Chạy API
