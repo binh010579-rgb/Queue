@@ -96,6 +96,28 @@ async function getPendingOrders(db) {
   return rows;
 }
 
+// Lấy toàn bộ đơn (mới nhất trước), có thể lọc theo trạng thái - dùng cho Admin
+async function findAllOrders(db, status) {
+  const base = `SELECT id, order_code, customer_name, customer_phone, customer_email,
+            shipping_address, total_amount, status, created_at
+     FROM orders`;
+  const order = ' ORDER BY created_at DESC, id DESC';
+  const [rows] = status
+    ? await db.execute(`${base} WHERE status = ?${order}`, [status])
+    : await db.query(base + order);
+  return rows;
+}
+
+// Cập nhật trạng thái có điều kiện: chỉ đổi khi đơn đang ở trạng thái "from".
+// Trả true khi đúng 1 dòng bị thay đổi (chống xử lý trùng).
+async function updateStatusIf(db, orderId, from, to) {
+  const [result] = await db.execute(
+    'UPDATE orders SET status = ? WHERE id = ? AND status = ?',
+    [to, orderId, from],
+  );
+  return result.affectedRows === 1;
+}
+
 module.exports = {
   SQL_PENDING_IDS,
   SQL_PENDING_ORDERS,
@@ -107,4 +129,6 @@ module.exports = {
   findItemsByOrderIds,
   getPendingOrderIds,
   getPendingOrders,
+  findAllOrders,
+  updateStatusIf,
 };
