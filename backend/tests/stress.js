@@ -1,5 +1,5 @@
 const path=require('path');const assert=require('assert');
-const {QueueEngineClient}=require('../src/queueEngineClient');
+const {QueueEngineClient}=require('../src/queue/queueEngineClient');
 const os=require('os');const fs=require('fs');
 const real=path.join(__dirname,'..','..','queue-engine',process.platform==='win32'?'queue_engine.exe':'queue_engine');
 const fake=path.join(__dirname,'fake-engine.js');
