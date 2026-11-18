@@ -4,7 +4,7 @@
 // Chay (trong thu muc backend/): node benchmark/bench-cost.js   (can da bien dich queue_engine truoc, vi du bang chay-thu.bat)
 const path = require("path");
 const { spawn } = require("child_process");
-const { QueueEngineClient } = require("../src/queueEngineClient");
+const { QueueEngineClient } = require("../src/queue/queueEngineClient");
 
 const exe = path.join(__dirname, "..", "..", "queue-engine", process.platform === "win32" ? "queue_engine.exe" : "queue_engine");
 const quiet = { log() {}, error() {}, warn() {} };
