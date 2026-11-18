@@ -1,0 +1,19 @@
+{
+  "name": "beautystore-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BeautyStore - Backend Node.js: API tạo đơn, tra cứu đơn, lọc và sắp xếp đơn PENDING",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test tests/orderValidator.test.js tests/orders.integration.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "mysql2": "^3.11.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

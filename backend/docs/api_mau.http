@@ -1,0 +1,49 @@
+@base = http://127.0.0.1:8080/api
+
+### Tạo đơn hợp lệ (body giống frontend gửi)
+POST {{base}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "Nguyễn Thị Lan",
+  "phone": "0901 234 567",
+  "address": "12 Lê Lợi, Q.1, TP.HCM",
+  "items": [
+    { "productId": 4, "name": "Kem dưỡng phục hồi Barrier Plus", "price": 465000, "quantity": 1 },
+    { "productId": 5, "name": "Kem chống nắng Airy Shield SPF50+", "price": 390000, "quantity": 2 }
+  ],
+  "total": 1245000
+}
+
+### Sản phẩm không tồn tại hoặc ngừng bán
+POST {{base}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "Nguyễn Thị Lan",
+  "phone": "0901234567",
+  "address": "12 Lê Lợi, Q.1, TP.HCM",
+  "items": [
+    { "productId": 9, "quantity": 1 },
+    { "productId": 999, "quantity": 1 }
+  ]
+}
+
+### Dữ liệu sai
+POST {{base}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "A",
+  "phone": "123",
+  "items": []
+}
+
+### Tra cứu đơn theo số điện thoại
+GET {{base}}/orders?phone=0901234567
+
+### Danh sách đơn PENDING
+GET {{base}}/orders/pending
+
+### Chi tiết đơn
+GET {{base}}/orders/4

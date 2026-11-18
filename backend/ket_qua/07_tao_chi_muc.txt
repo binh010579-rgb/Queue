@@ -1,0 +1,17 @@
++-------------------------+---------+----------+----------+
+| Table                   | Op      | Msg_type | Msg_text |
++-------------------------+---------+----------+----------+
+| beautystore_test.orders | analyze | status   | OK       |
++-------------------------+---------+----------+----------+
++--------+------------+------------------------------+--------------+----------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| Table  | Non_unique | Key_name                     | Seq_in_index | Column_name    | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Visible | Expression |
++--------+------------+------------------------------+--------------+----------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
+| orders |          0 | PRIMARY                      |            1 | id             | A         |      198971 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| orders |          0 | uq_orders_order_code         |            1 | order_code     | A         |      198971 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| orders |          1 | idx_orders_phone_created     |            1 | customer_phone | A         |      198971 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| orders |          1 | idx_orders_phone_created     |            2 | created_at     | A         |      198971 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| orders |          1 | idx_orders_phone_created     |            3 | id             | A         |      195075 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| orders |          1 | idx_orders_status_created_id |            1 | status         | A         |           3 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| orders |          1 | idx_orders_status_created_id |            2 | created_at     | A         |      130140 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
+| orders |          1 | idx_orders_status_created_id |            3 | id             | A         |      198971 |     NULL |   NULL |      | BTREE      |         |               | YES     | NULL       |
++--------+------------+------------------------------+--------------+----------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+------------+
