@@ -1,118 +1,245 @@
-# Queue Engine – BeautyStore (TV4)
+# BeautyStore – Hàng chờ xử lý đơn hàng bằng Queue (FIFO)
 
-Chương trình C++ giữ **hàng đợi FIFO các mã đơn hàng**, cài bằng danh sách liên kết đơn.
-Backend gửi lệnh qua **stdin**, chương trình trả kết quả qua **stdout**. Mỗi lệnh là một dòng, mỗi lần trả lời đúng một dòng.
+Web bán mỹ phẩm. Khách đặt hàng, đơn vào **hàng chờ FIFO**; Admin bấm "xử lý đơn tiếp theo" thì duyệt đơn **cũ nhất trước**.
 
-Queue Engine **không truy cập Database** và không biết thông tin khách hàng. Nó chỉ giữ thứ tự các mã đơn đang chờ xử lý. Database vẫn là nguồn dữ liệu chính.
+Hàng chờ do một chương trình **C++ riêng (Queue Engine)** giữ, cài bằng **danh sách liên kết đơn**. Backend Node.js nói chuyện với Engine qua stdin/stdout.
 
-## Cấu trúc thư mục
+**Nguyên tắc chính:** Database (MySQL) là nguồn dữ liệu chính. Engine chỉ giữ thứ tự các mã đơn PENDING trong RAM. Mất Engine thì dựng lại hàng chờ từ Database.
 
-```
-queue-engine/
-├── src/
-│   ├── queue_engine.h      # Node, Queue (danh sách liên kết), QueueEngine (xử lý lệnh)
-│   └── queue_engine.cpp    # hàm main: đọc lệnh từ stdin, in kết quả ra stdout
-├── tests/
-│   └── test_queue.cpp      # bộ kiểm thử Queue và giao thức lệnh
-└── README.md
-```
-
-## Biên dịch và chạy
-
-Chạy các lệnh dưới đây **trong thư mục `queue-engine/`**. Cần trình biên dịch hỗ trợ C++17 (g++).
+## 1. Kiến trúc
 
 ```
-g++ -std=c++17 -Wall -Wextra -o queue_engine src/queue_engine.cpp
+Frontend (React + Vite)  ──HTTP──>  Backend (Node.js + Express)  ──stdin/stdout──>  Queue Engine (C++)
+                                           │
+                                           └── MySQL (orders, order_items, products)
 ```
 
-Chạy tương tác (gõ lệnh từng dòng, kết thúc bằng Ctrl+Z rồi Enter trên Windows, hoặc Ctrl+D trên Linux/macOS):
+| Luồng | Các bước |
+|---|---|
+| Đặt hàng | Kiểm tra dữ liệu → transaction lưu đơn `PENDING` → **commit** → gửi `ENQ <id>` |
+| Xử lý đơn tiếp theo | Gửi `DEQ` → `UPDATE ... SET status='APPROVED' WHERE id=? AND status='PENDING'` → nếu `affectedRows = 0` (đơn đã hủy/đã xử lý) thì bỏ qua và `DEQ` tiếp; gặp `EMPTY` thì dừng |
+| Hủy đơn | Chỉ đơn `PENDING`. Đơn vẫn nằm trong Queue và bị bỏ qua khi tới lượt (lazy deletion) |
+| Engine chết | Backend khởi động lại Engine → `CLEAR` → `ENQ` lần lượt đơn PENDING theo `created_at`, rồi `id` tăng dần |
+
+Trạng thái đơn: `PENDING` → `APPROVED` → `COMPLETED`, hoặc `PENDING` → `CANCELLED`.
+
+## 2. Cấu trúc thư mục
 
 ```
-.\queue_engine        # Windows PowerShell
-./queue_engine        # Linux / macOS
+.
+├── frontend/                  React + TypeScript + Vite (trang khách + trang Admin)
+│   └── src/ App.tsx, admin/Admin.tsx, api.ts
+├── backend/                   Node.js + Express + MySQL
+│   ├── src/
+│   │   ├── server.js          khởi động server, nối Queue Engine
+│   │   ├── app.js             Express app, CORS, gắn route, xử lý lỗi
+│   │   ├── db.js              pool MySQL
+│   │   ├── routes/            orderRoutes.js (đơn hàng + admin)
+│   │   ├── services/          orderService.js (logic nghiệp vụ)
+│   │   ├── repositories/      orderRepository.js (toàn bộ câu SQL)
+│   │   ├── validators/        orderValidator.js
+│   │   └── queue/             queueEngineClient.js (nói chuyện với Engine), noopQueue.js
+│   ├── sql/                   01–08: tạo bảng, dữ liệu mẫu, truy vấn PENDING, chỉ mục, EXPLAIN
+│   ├── ket_qua/               output thật khi chạy các script SQL
+│   ├── tests/                 test validator, tích hợp, processNext, stress, fake engine
+│   ├── benchmark/             bench-cost.js
+│   └── docs/                  TV3_TrinhBay.md, api_mau.http
+└── queue-engine/              C++17
+    ├── src/                   queue_engine.h, queue_engine.cpp, json.hpp
+    ├── tests/                 test_queue / test_enqueue / test_dequeue .cpp
+    └── benchmark/             benchmark_queue.cpp, KET_QUA_BENCHMARK.md
 ```
 
-## Chạy bộ kiểm thử
+## 3. Cài đặt và chạy
 
+Cần: **g++ (C++17)**, **Node.js 18+**, **MySQL 8**.
+
+### Bước 1 – Biên dịch Queue Engine
+
+```bash
+cd queue-engine
+g++ -std=c++17 -O2 -Wall -Wextra -o queue_engine src/queue_engine.cpp
 ```
-g++ -std=c++17 -Wall -Wextra -o test_queue tests/test_queue.cpp
-.\test_queue          # Windows PowerShell
-./test_queue          # Linux / macOS
+
+### Bước 2 – Tạo Database
+
+```bash
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS beautystore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE DATABASE IF NOT EXISTS beautystore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+cd backend
+mysql -u root -p --default-character-set=utf8mb4 beautystore -e "source sql/01_tao_bang.sql; source sql/07_tao_chi_muc.sql"
 ```
 
-Dòng cuối phải là `=== TONG KET: 80/80 test dat ===`. Có test lỗi thì chương trình thoát với mã 1.
+### Bước 3 – Chạy Backend
 
-Để kiểm tra thêm lỗi bộ nhớ (Linux/macOS hoặc MinGW có hỗ trợ), thêm `-fsanitize=address,undefined -g` vào lệnh biên dịch.
+```bash
+cd backend
+npm install
+cp .env.example .env        # Windows: copy .env.example .env
+```
 
-## Giao thức Backend – Queue Engine
+Mở `.env`, điền `DB_PASSWORD`. Biến `QUEUE_ENGINE_PATH` đã điền sẵn `../queue-engine/queue_engine` (Windows thêm `.exe`). Nếu để trống, đơn vẫn lưu `PENDING` nhưng **không vào hàng chờ**.
 
-Mỗi lệnh là một dòng văn bản kết thúc bằng xuống dòng. Engine trả đúng **một dòng** phản hồi cho mỗi lệnh và đẩy ra ngay (flush). Tên lệnh **viết hoa đúng như bảng**; `deq` viết thường là lệnh sai.
+```bash
+npm start                   # http://127.0.0.1:8080/api
+```
 
-| Lệnh gửi | Phản hồi | Ý nghĩa |
+| Biến `.env` | Ý nghĩa |
+|---|---|
+| `PORT` | mặc định `8080` |
+| `CORS_ORIGIN` | mặc định `*`; có thể đặt `http://localhost:5173` |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | kết nối MySQL |
+| `QUEUE_ENGINE_PATH` | đường dẫn file chạy Queue Engine |
+| `TEST_DB_NAME` | database cho test tích hợp, **phải kết thúc bằng `_test`** |
+
+### Bước 4 – Chạy Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev                 # http://localhost:5173
+```
+
+Frontend gọi API tại `http://127.0.0.1:8080/api` (đổi bằng biến `VITE_API_URL`).
+
+## 4. API
+
+Lỗi luôn có dạng `{ "message": "...", "code": "...", "details": ... }`.
+
+| Method | Đường dẫn | Mô tả |
 |---|---|---|
-| `ENQ <id>` | `OK` hoặc `ERR BAD_ID` | Thêm id vào cuối hàng (rear) |
-| `DEQ` | `ID <id>` hoặc `EMPTY` | Lấy và xóa id ở đầu hàng (front) |
-| `PEEK` | `ID <id>` hoặc `EMPTY` | Xem id ở đầu hàng, không xóa |
-| `SIZE` | `SIZE <n>` | Số phần tử hiện có |
+| POST | `/api/orders` | Tạo đơn (`201`). Backend bỏ qua `name`, `price`, `total` do client gửi, tự lấy giá từ bảng `products` và tự tính tổng |
+| GET | `/api/orders?phone=` | Lịch sử đơn theo SĐT, mới nhất trước |
+| GET | `/api/orders/pending` | Đơn PENDING theo đúng thứ tự hàng chờ |
+| GET | `/api/orders/:id` | Chi tiết đơn |
+| POST | `/api/orders/process-next` | Admin: duyệt đơn tiếp theo |
+| POST | `/api/orders/:id/cancel` | Hủy đơn (chỉ PENDING) |
+| POST | `/api/orders/:id/complete` | Hoàn thành đơn (chỉ APPROVED) |
+| GET | `/api/admin/orders?status=` | Admin: toàn bộ đơn, lọc theo trạng thái |
+
+Mã lỗi thường gặp: `400 VALIDATION_ERROR`, `400 INVALID_JSON`, `400 BAD_ID`, `404 ORDER_NOT_FOUND`, `422 PRODUCT_NOT_AVAILABLE`, `500 INTERNAL_ERROR`.
+
+Ví dụ body tạo đơn:
+
+```json
+{
+  "customerName": "Nguyễn Thị Lan",
+  "phone": "0901234567",
+  "address": "12 Lê Lợi, Q.1, TP.HCM",
+  "items": [{ "productId": 4, "quantity": 1 }, { "productId": 5, "quantity": 2 }]
+}
+```
+
+Request mẫu đầy đủ: `backend/docs/api_mau.http`.
+
+## 5. Giao thức Backend – Queue Engine
+
+Mỗi lệnh là một dòng, Engine trả đúng **một dòng** và flush ngay. Tên lệnh viết hoa đúng như bảng.
+
+| Lệnh | Phản hồi | Ý nghĩa |
+|---|---|---|
+| `ENQ <id>` | `OK` / `ERR BAD_ID` | Thêm id vào cuối hàng |
+| `DEQ` | `ID <id>` / `EMPTY` | Lấy và xóa id ở đầu hàng |
+| `PEEK` | `ID <id>` / `EMPTY` | Xem id ở đầu hàng |
+| `SIZE` | `SIZE <n>` | Số phần tử |
 | `CLEAR` | `OK` | Xóa sạch hàng |
-| Lệnh không hợp lệ | `ERR BAD_COMMAND` | Engine bỏ qua và vẫn chạy tiếp |
+| Lệnh sai | `ERR BAD_COMMAND` | Engine bỏ qua và chạy tiếp |
 
-### Quy ước
+Quy ước:
+- Engine in `READY` khi sẵn sàng; Backend đợi dòng này rồi mới gửi lệnh.
+- Id hợp lệ là số nguyên từ `1` đến `2147483647`. `007` được chấp nhận và lưu là `7`.
+- Engine **không kiểm tra trùng id** (tốn O(n)), nên Backend không được `ENQ` trùng. Khi khôi phục luôn `CLEAR` trước.
+- Khi stdin đóng, Engine giải phóng bộ nhớ và thoát với mã 0.
 
-- **Khởi động:** Engine in một dòng `READY` khi sẵn sàng nhận lệnh. Backend nên đợi dòng này rồi mới gửi lệnh.
-- **Id hợp lệ:** số nguyên dương từ `1` đến `2147483647`. Số 0, số âm, chữ, số thập phân, số quá lớn đều trả `ERR BAD_ID`. Số có số 0 đứng đầu (`007`) được chấp nhận và lưu là `7`.
-- **`ERR BAD_COMMAND`:** lệnh lạ, dòng trống, `ENQ` thiếu hoặc thừa tham số, lệnh không có tham số mà bị gõ thêm (ví dụ `DEQ 1`).
-- **Kết thúc:** khi hết dữ liệu stdin (Backend đóng pipe), Engine giải phóng bộ nhớ và thoát với mã 0.
-- **Không kiểm tra trùng id:** kiểm tra trùng tốn O(n), nên **Backend chịu trách nhiệm không `ENQ` trùng**. Khi khôi phục hàng, luôn gửi `CLEAR` trước rồi mới nạp lại.
-- **Định dạng dòng:** Engine chấp nhận cả cuối dòng kiểu Windows (`\r\n`), khoảng trắng thừa ở đầu và cuối dòng, và dòng cuối không có ký tự xuống dòng.
+Thử nhanh: `printf 'ENQ 5\nENQ 7\nDEQ\nDEQ\nDEQ\n' | ./queue_engine` → `READY, OK, OK, ID 5, ID 7, EMPTY`.
 
-### Ví dụ một phiên làm việc
+### Cấu trúc dữ liệu
 
+`Node` (`orderId`, `next`) → `Queue` (`front`, `rear`, `size`) → `QueueEngine` (nhận một dòng lệnh, trả một dòng phản hồi).
+
+| Thao tác | Độ phức tạp |
+|---|---|
+| `enqueue`, `dequeue`, `peek`, `isEmpty`, `getSize` | O(1) |
+| `clear` | O(n) |
+
+Danh sách liên kết giữ sẵn `front` và `rear` nên thêm cuối và lấy đầu đều O(1); mảng thì lấy phần tử đầu phải dời cả mảng, tốn O(n).
+
+## 6. Module tích hợp `queueEngineClient.js`
+
+- Khởi động Engine **một lần** cùng server, giữ pipe, đợi `READY`. Không tạo tiến trình mới cho mỗi request vì sẽ mất hàng đợi và chậm hơn nhiều.
+- **Tuần tự hóa lệnh:** mỗi lúc chỉ một lệnh chờ phản hồi, nên request đồng thời không làm lẫn phản hồi.
+- **Kiểm tra id** trước khi gửi (`BAD_ID`), **kiểm tra từng phản hồi** theo đặc tả (`BAD_RESPONSE`), **hết thời gian chờ** (`TIMEOUT`: 3 giây mỗi lệnh, 5 giây cho `READY`).
+- **Tự khôi phục** khi Engine thoát, lỗi pipe, `TIMEOUT` hoặc `BAD_RESPONSE`: khởi động lại → `CLEAR` → nạp lại đơn PENDING. Thử tối đa 3 lần, vẫn lỗi thì `RECOVERY_FAILED`. Lệnh đang chạy lúc Engine chết sẽ báo lỗi, đơn vẫn PENDING trong Database nên Admin chỉ cần bấm lại.
+- **Chống xử lý trùng (2 lớp):** tuần tự hóa lệnh, và cập nhật có điều kiện `WHERE status='PENDING'` kiểm tra `affectedRows = 1`.
+
+## 7. Database và chỉ mục (lọc, sắp xếp đơn PENDING)
+
+Thứ tự dựng lại hàng chờ là `ORDER BY created_at ASC, id ASC`, tức đơn cũ trước và khi trùng `created_at` thì `id` nhỏ trước. Chỉ mục: `(status, created_at, id)` trong `sql/07_tao_chi_muc.sql`. Tra cứu theo SĐT dùng `idx_orders_phone_created`.
+
+| File | Việc |
+|---|---|
+| `01_tao_bang.sql` | Tạo bảng và nạp 8 sản phẩm (chạy lại an toàn) |
+| `02_du_lieu_kiem_thu.sql` | 16 đơn mẫu, **xóa dữ liệu cũ** |
+| `03`, `04` | Truy vấn PENDING và kiểm tra thứ tự PASS/FAIL |
+| `05_du_lieu_lon.sql` | 200.000 đơn, **xóa dữ liệu cũ** |
+| `06`, `07`, `08` | EXPLAIN trước chỉ mục, tạo chỉ mục, EXPLAIN sau chỉ mục |
+
+> ⚠️ `02` và `05` xóa sạch đơn hàng. Chỉ chạy trên `beautystore_test`.
+
+Chạy phần kiểm thử và đo EXPLAIN:
+
+```bash
+cd backend
+mysql -u root -p -t --default-character-set=utf8mb4 beautystore_test -e "source sql/01_tao_bang.sql; source sql/02_du_lieu_kiem_thu.sql; source sql/03_truy_van_pending.sql; source sql/04_kiem_tra_thu_tu.sql"
+mysql -u root -p -t --default-character-set=utf8mb4 beautystore_test -e "source sql/05_du_lieu_lon.sql; source sql/06_explain_truoc_chi_muc.sql; source sql/07_tao_chi_muc.sql; source sql/08_explain_sau_chi_muc.sql"
 ```
-(Engine)  READY
-ENQ 101   ->  OK
-ENQ 102   ->  OK
-ENQ 103   ->  OK
-PEEK      ->  ID 101
-DEQ       ->  ID 101
-SIZE      ->  SIZE 2
-DEQ       ->  ID 102
-DEQ       ->  ID 103
-DEQ       ->  EMPTY
-ENQ abc   ->  ERR BAD_ID
-HELLO     ->  ERR BAD_COMMAND
+
+Kết quả thật lưu trong `backend/ket_qua/`; nội dung trình bày trong `backend/docs/TV3_TrinhBay.md`.
+
+## 8. Kiểm thử
+
+```bash
+# Queue Engine (trong queue-engine/)
+g++ -std=c++17 -Wall -Wextra -o test_queue tests/test_queue.cpp && ./test_queue     # 80/80
+g++ -std=c++17 -o test_enqueue tests/test_enqueue.cpp && ./test_enqueue             # 49/49
+g++ -std=c++17 -o test_dequeue tests/test_dequeue.cpp && ./test_dequeue             # 89/89
+# kiểm tra bộ nhớ: thêm -fsanitize=address,undefined -g (hoặc chạy Valgrind)
+
+# Backend (trong backend/)
+npm test                              # validator, processNext, route admin; test tích hợp cần MySQL
+node tests/try-engine.js              # nạp, ENQ, duyệt, PEEK, ID sai, giết Engine rồi tự khôi phục
+node tests/stress.js                  # 200 ENQ + 100 duyệt đồng thời, treo, phản hồi lạ, sai đường dẫn, ID sai
+node benchmark/bench-cost.js          # Engine thường trực vs tiến trình mới mỗi request
 ```
 
-Thử nhanh trên Linux/macOS:
+`npm test` chạy test tích hợp chỉ khi `.env` có `TEST_DB_NAME` kết thúc bằng `_test` (test sẽ xóa và tạo lại bảng trong database đó). `tests/fake-engine.js` là Engine giả, cố tình treo hoặc trả lời sai, dùng cho test treo và phản hồi lạ.
 
-```
-printf 'ENQ 5\nENQ 7\nDEQ\nDEQ\nDEQ\n' | ./queue_engine
-```
+## 9. Benchmark cấu trúc dữ liệu
 
-Kết quả: `READY`, `OK`, `OK`, `ID 5`, `ID 7`, `EMPTY`.
+Đo bằng `queue-engine/benchmark/benchmark_queue.cpp` (`n` lần enqueue rồi `n` lần dequeue):
 
-## Hướng dẫn cho Backend (TV6)
-
-1. **Khởi động Engine một lần** cùng lúc với server và giữ kết nối stdin/stdout suốt thời gian chạy. Không gọi chương trình mới cho mỗi request, vì mỗi tiến trình mới có hàng rỗng nên sẽ mất toàn bộ hàng đợi.
-2. **Đợi dòng `READY`** rồi mới gửi lệnh.
-3. **Mỗi thời điểm chỉ một lệnh đang chờ phản hồi.** Gửi một lệnh, đọc đúng một dòng phản hồi, rồi mới gửi lệnh tiếp theo (cần hàng đợi lệnh hoặc khóa ở Backend để các request đồng thời không làm lẫn phản hồi).
-4. **Kiểm tra mọi phản hồi** theo bảng giao thức; gặp phản hồi lạ hoặc hết thời gian chờ thì coi là Engine có sự cố.
-5. **Khôi phục khi Engine dừng:** khởi động lại Engine, gửi `CLEAR`, rồi `ENQ` lần lượt các đơn trạng thái PENDING theo thứ tự `created_at` tăng dần, sau đó `id` tăng dần (do TV3 cung cấp).
-6. **Đơn mới:** sau khi lưu đơn PENDING vào Database, gửi `ENQ <id>` ngay. Đơn mới có `created_at` lớn nhất nên thêm vào cuối hàng là đúng thứ tự.
-7. **Xử lý đơn tiếp theo:** gửi `DEQ`, rồi cập nhật Database có điều kiện (`status = 'PENDING'`). Nếu không có dòng nào bị thay đổi (đơn đã hủy hoặc đã xử lý) thì bỏ qua và `DEQ` tiếp cho đến khi duyệt được một đơn hoặc gặp `EMPTY`.
-
-## Cấu trúc dữ liệu
-
-- `Node`: chứa `orderId` và con trỏ `next`.
-- `Queue`: quản lý `front` (đầu hàng), `rear` (cuối hàng) và `size`. Hàng rỗng khi cả `front` và `rear` đều là `nullptr`.
-- `QueueEngine`: nhận một dòng lệnh, gọi `Queue`, trả về một dòng phản hồi.
-
-| Thao tác | Ý nghĩa | Độ phức tạp |
+| n | Linked List Queue | Array Queue |
 |---|---|---|
-| `enqueue` | Thêm Node vào rear | O(1) |
-| `dequeue` | Lấy Node ở front | O(1) |
-| `peek` | Xem phần tử ở front | O(1) |
-| `isEmpty` / `getSize` | Kiểm tra rỗng / lấy số phần tử | O(1) |
-| `clear` | Giải phóng toàn bộ Node | O(n) |
+| 1.000 | 0,0486 ms | 0,0177 ms |
+| 10.000 | 0,9422 ms | 48,9983 ms |
+| 100.000 | 7,3379 ms | 5582,4145 ms |
 
-Danh sách liên kết quản lý sẵn `front` và `rear` nên thêm cuối và lấy đầu đều O(1). Dùng mảng thì lấy phần tử ở đầu phải dời cả mảng, tốn O(n).
+Danh sách liên kết nhanh hơn khoảng 760 lần ở `n = 100.000`. Mảng chỉ nhỉnh hơn ở `n` rất nhỏ nhờ CPU cache. Chi tiết trong `queue-engine/benchmark/KET_QUA_BENCHMARK.md`.
+
+Chi phí gọi tiến trình (đo trên máy Linux của người soạn, **nên chạy lại trên máy nhóm trước khi nộp**): Engine thường trực khoảng 0,03 ms mỗi lệnh, còn tạo tiến trình mới mỗi request khoảng 7 ms, chênh khoảng 200 lần.
+
+## 10. Phân công
+
+| Thành viên | Phần việc |
+|---|---|
+| TV1 | Benchmark so sánh Linked List Queue với Array Queue |
+| TV2 | Giao diện thanh toán/đặt hàng; kiểm tra bộ nhớ Queue Engine (ASan/UBSan, Valgrind: 0 lỗi, 0 rò rỉ) |
+| TV3 | API tạo/tra cứu đơn, lọc và sắp xếp đơn PENDING, chỉ mục, EXPLAIN, dữ liệu kiểm thử |
+| TV4 | Queue Engine C++ (danh sách liên kết đơn) và giao thức lệnh |
+| TV5 | Admin: xử lý đơn tiếp theo, hủy, hoàn thành, danh sách đơn |
+| TV6 | Tích hợp Backend với Engine: kiểm soát kết quả, khôi phục, chống xử lý trùng |
+
+## 11. Hạn chế đã biết
+
+- Chưa có bằng chứng chạy trọn luồng với MySQL thật (đặt hàng → duyệt → hủy/hoàn thành); cần chạy `npm test` với `TEST_DB_NAME` trước khi nộp.
+- Số liệu benchmark chi phí tiến trình cần đo lại trên máy nhóm.
+- Engine không kiểm tra trùng id; Backend chịu trách nhiệm không `ENQ` trùng.
