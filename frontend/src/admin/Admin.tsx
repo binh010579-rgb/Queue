@@ -30,7 +30,7 @@ const filters: { value: OrderStatus | "ALL"; label: string }[] = [
 
 export default function Admin() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
-  const [filter, setFilter] = useState<OrderStatus | "ALL">("ALL");
+  const [filter, setFilter] = useState<OrderStatus | "ALL">("PENDING");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -91,7 +91,16 @@ export default function Admin() {
     });
 
   const pendingCount = orders.filter((o) => o.status === "PENDING").length;
-  const shown = filter === "ALL" ? orders : orders.filter((o) => o.status === filter);
+
+  // Thứ tự hàng chờ FIFO: đơn cũ nhất được xử lý trước
+  const queueOrder = orders
+    .filter((o) => o.status === "PENDING")
+    .sort((x, y) => x.orderId - y.orderId)
+    .map((o) => o.orderId);
+  // Đơn cũ nhất lên đầu (đúng thứ tự FIFO)
+  const shown = (filter === "ALL" ? orders : orders.filter((o) => o.status === filter))
+    .slice()
+    .sort((x, y) => x.orderId - y.orderId);
 
   return (
     <div className="min-h-screen bg-[#fff9fa] text-[#30292c]">
@@ -165,6 +174,7 @@ export default function Admin() {
                 <th className="px-4 py-3">Sản phẩm</th>
                 <th className="px-4 py-3">Tổng tiền</th>
                 <th className="px-4 py-3">Thời gian tạo</th>
+                <th className="px-4 py-3">Lượt xử lý</th>
                 <th className="px-4 py-3">Trạng thái</th>
                 <th className="px-4 py-3">Thao tác</th>
               </tr>
@@ -172,7 +182,7 @@ export default function Admin() {
             <tbody>
               {shown.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-[#7a6b70]">
+                  <td colSpan={8} className="px-4 py-10 text-center text-[#7a6b70]">
                     Không có đơn nào.
                   </td>
                 </tr>
@@ -191,6 +201,13 @@ export default function Admin() {
                   </td>
                   <td className="px-4 py-3">{formatPrice(o.total)}</td>
                   <td className="px-4 py-3">{formatTime(o.createdAt)}</td>
+                  <td className="px-4 py-3 font-semibold">
+                    {o.status === "PENDING"
+                      ? queueOrder.indexOf(o.orderId) === 0
+                        ? "Kế tiếp ▶"
+                        : `Lượt ${queueOrder.indexOf(o.orderId) + 1}`
+                      : "—"}
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       className={
@@ -202,6 +219,15 @@ export default function Admin() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
+                    {o.status === "PENDING" && queueOrder[0] === o.orderId && (
+                      <button
+                        onClick={handleProcessNext}
+                        disabled={busy}
+                        className="mr-2 rounded-full bg-[#29704b] px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                      >
+                        Duyệt
+                      </button>
+                    )}
                     {o.status === "PENDING" && (
                       <button
                         onClick={() => handleCancel(o.orderId)}
