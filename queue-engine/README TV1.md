@@ -50,8 +50,3 @@ Khi số lượng đơn hàng tăng gấp 10 lần từ $10.000$ lên $100.000$,
 3. **Xem chi tiết & Tích hợp Giỏ hàng:**
    - Cho phép xem chi tiết mô tả, thành phần sản phẩm và tùy chỉnh số lượng mua.
    - Tích hợp hàm `addToCart()` đồng bộ dữ liệu giỏ hàng qua `localStorage` (`beautystore_cart`), kết nối liền mạch sang luồng Đặt hàng (`createOrder`) và Tra cứu trạng thái đơn hàng theo số điện thoại (`getOrdersByPhone`).
-
----
-
-## 4. Kết luận chung
-Toàn bộ các đầu việc của TV1 từ kiểm thử đơn vị, chứng minh hiệu năng cấu trúc dữ liệu C++ đến giao diện người dùng phía khách hàng đều đã hoàn thiện, chạy ổn định và tích hợp đồng bộ với các phân hệ Backend/Database của cả nhóm.
