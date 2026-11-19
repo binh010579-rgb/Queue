@@ -231,7 +231,7 @@ Chi phí gọi tiến trình (đo trên máy Linux của người soạn, **nên
 
 | Thành viên | Phần việc |
 |---|---|
-| TV1 | Benchmark so sánh Linked List Queue với Array Queue |
+| TV1 | Giao diện Khách hàng (Trang chủ, danh sách, tìm kiếm/lọc, chi tiết sản phẩm); kiểm thử Unit Test enqueue; Benchmark so sánh Linked List Queue với Array Queue. |
 | TV2 | Giao diện thanh toán/đặt hàng; kiểm tra bộ nhớ Queue Engine (ASan/UBSan, Valgrind: 0 lỗi, 0 rò rỉ) |
 | TV3 | API tạo/tra cứu đơn, lọc và sắp xếp đơn PENDING, chỉ mục, EXPLAIN, dữ liệu kiểm thử |
 | TV4 | Queue Engine C++ (danh sách liên kết đơn) và giao thức lệnh |
