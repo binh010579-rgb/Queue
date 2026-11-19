@@ -238,30 +238,6 @@ export default function Admin() {
           </div>
         </section>
 
-        {/* [TV5 - THÊM MỚI] Thanh trực quan hóa thứ tự hàng đợi FIFO (FRONT -> REAR) phục vụ demo thuật toán */}
-        {queueOrder.length > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-[#f3e4e8] bg-white px-4 py-3 text-xs">
-            <span className="font-semibold text-[#7a6b70]">Hàng đợi FIFO (FRONT ▶):</span>
-            {queueOrder.slice(0, 10).map((id, idx) => (
-              <span
-                key={id}
-                className={
-                  "rounded-full px-2.5 py-0.5 font-semibold " +
-                  (idx === 0
-                    ? "bg-[#29704b] text-white"
-                    : "bg-[#fff3cd] text-[#8a6512]")
-                }
-              >
-                #{id}
-              </span>
-            ))}
-            {queueOrder.length > 10 && (
-              <span className="text-[#7a6b70]">... (+{queueOrder.length - 10} đơn)</span>
-            )}
-            <span className="font-semibold text-[#7a6b70]">◀ REAR</span>
-          </div>
-        )}
-
         {notice && (
           <p className="mt-4 rounded-xl bg-[#dff5e8] px-4 py-3 text-sm text-[#29704b]">{notice}</p>
         )}
