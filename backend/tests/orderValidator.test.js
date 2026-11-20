@@ -1,6 +1,11 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { validateCreateOrder, validatePhoneQuery } = require('../src/validators/orderValidator');
+const {
+  validateCreateOrder,
+  validatePhoneQuery,
+  validateOrderFilter,
+  ORDER_STATUSES,
+} = require('../src/validators/orderValidator');
 
 // Dữ liệu mẫu giống frontend gửi lên
 function validBody(overrides = {}) {
@@ -139,5 +144,42 @@ describe('validatePhoneQuery', () => {
   it('báo lỗi khi thiếu hoặc sai', () => {
     assert.deepEqual(getErrorFields(() => validatePhoneQuery(undefined)), ['phone']);
     assert.deepEqual(getErrorFields(() => validatePhoneQuery('abc')), ['phone']);
+  });
+});
+
+// Bộ lọc trạng thái và ngày tạo
+describe('validateOrderFilter', () => {
+  it('không có tham số thì lấy mọi trạng thái, không giới hạn ngày', () => {
+    assert.deepEqual(validateOrderFilter({}, { paging: true }), {
+      statuses: ORDER_STATUSES, from: null, to: null, limit: null, offset: 0,
+    });
+  });
+
+  it('chuẩn hóa trạng thái và đổi khoảng ngày thành [from, to + 1 ngày)', () => {
+    const filter = validateOrderFilter({ status: 'pending', from: '2026-11-10', to: '2026-11-30' });
+    assert.deepEqual(filter.statuses, ['PENDING']);
+    assert.equal(filter.from, '2026-11-10 00:00:00');
+    assert.equal(filter.to, '2026-12-01 00:00:00');
+  });
+
+  it('nhận limit và offset khi có phân trang', () => {
+    const filter = validateOrderFilter({ limit: '20', offset: '40' }, { paging: true });
+    assert.equal(filter.limit, 20);
+    assert.equal(filter.offset, 40);
+  });
+
+  it('báo lỗi trạng thái, ngày không có thật, ngày đảo ngược', () => {
+    assert.deepEqual(getErrorFields(() => validateOrderFilter({ status: 'DONE' })), ['status']);
+    assert.deepEqual(getErrorFields(() => validateOrderFilter({ from: '2026-02-30' })), ['from']);
+    assert.deepEqual(getErrorFields(() => validateOrderFilter({ to: '20/11/2026' })), ['to']);
+    assert.deepEqual(getErrorFields(() => validateOrderFilter({ from: '2026-11-20', to: '2026-11-19' })), ['to']);
+  });
+
+  it('báo lỗi limit, offset sai', () => {
+    const paging = { paging: true };
+    assert.deepEqual(getErrorFields(() => validateOrderFilter({ limit: '0' }, paging)), ['limit']);
+    assert.deepEqual(getErrorFields(() => validateOrderFilter({ limit: '5000' }, paging)), ['limit']);
+    assert.deepEqual(getErrorFields(() => validateOrderFilter({ limit: '10', offset: '-1' }, paging)), ['offset']);
+    assert.deepEqual(getErrorFields(() => validateOrderFilter({ offset: '10' }, paging)), ['offset']);
   });
 });

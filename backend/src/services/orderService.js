@@ -1,10 +1,14 @@
 const crypto = require('crypto');
 const { AppError } = require('../errors');
 const repo = require('../repositories/orderRepository');
-const { validateCreateOrder, validatePhoneQuery } = require('../validators/orderValidator');
+const {
+  validateCreateOrder,
+  validatePhoneQuery,
+  validateOrderFilter,
+  ORDER_STATUSES,
+} = require('../validators/orderValidator');
 
 const MAX_CODE_ATTEMPTS = 3;
-const ORDER_STATUSES = ['PENDING', 'APPROVED', 'COMPLETED', 'CANCELLED'];
 
 // Hàm hỗ trợ
 function generateOrderCode(now = new Date()) {
@@ -172,6 +176,43 @@ function createOrderService({ pool, queue, logger = console }) {
     return rows.map((row) => formatHistoryOrder(row, itemsByOrder.get(row.id) || []));
   }
 
+  // Thống kê đơn hàng
+  async function getOrderStats(query) {
+    const filter = validateOrderFilter(query);
+    const rows = await repo.getOrderStats(pool, filter);
+    const byStatus = {};
+    for (const status of ORDER_STATUSES) byStatus[status] = { count: 0, value: 0 };
+
+    let totalOrders = 0;
+    let totalCents = 0;
+    for (const row of rows) {
+      const count = Number(row.so_don);
+      const cents = toCents(row.tong_tien);
+      byStatus[row.status] = { count, value: cents / 100 };
+      totalOrders += count;
+      totalCents += cents;
+    }
+    const cancelledCents = toCents(byStatus.CANCELLED.value);
+
+    return {
+      totalOrders,
+      totalValue: totalCents / 100,
+      validValue: (totalCents - cancelledCents) / 100,
+      byStatus,
+    };
+  }
+
+  // Xóa đơn đã hủy hoặc đã hoàn thành
+  async function deleteOrder(orderId) {
+    if (await repo.deleteFinishedOrder(pool, orderId)) {
+      return { orderId, message: 'Đã xóa đơn hàng' };
+    }
+    const row = await repo.findOrderById(pool, orderId);
+    if (!row) throw new AppError(404, 'ORDER_NOT_FOUND', 'Không tìm thấy đơn hàng');
+    throw new AppError(409, 'ORDER_NOT_DELETABLE',
+      'Chỉ xóa được đơn đã hủy hoặc đã hoàn thành', { status: row.status });
+  }
+
   // Danh sách đơn PENDING
   async function getPendingOrders() {
     const rows = await repo.getPendingOrders(pool);
@@ -183,16 +224,10 @@ function createOrderService({ pool, queue, logger = console }) {
     return repo.getPendingOrderIds(pool);
   }
 
-  // Danh sách đơn cho Admin (mới nhất trước), có thể lọc theo trạng thái
-  async function getAllOrders(statusQuery) {
-    let status;
-    if (statusQuery !== undefined && statusQuery !== '') {
-      status = String(statusQuery).toUpperCase();
-      if (!ORDER_STATUSES.includes(status)) {
-        throw new AppError(400, 'BAD_STATUS', 'Trạng thái không hợp lệ', { allowed: ORDER_STATUSES });
-      }
-    }
-    const rows = await repo.findAllOrders(pool, status);
+  // Danh sách đơn cho Admin (mới nhất trước), lọc theo trạng thái và ngày tạo
+  async function getAllOrders(status, range = {}) {
+    const filter = validateOrderFilter({ ...range, status }, { paging: true });
+    const rows = await repo.findOrders(pool, filter);
     const itemRows = await repo.findItemsByOrderIds(pool, rows.map((row) => row.id));
     const itemsByOrder = groupItemsByOrder(itemRows);
     return rows.map((row) => formatOrder(row, itemsByOrder.get(row.id) || []));
@@ -247,6 +282,8 @@ function createOrderService({ pool, queue, logger = console }) {
     createOrder,
     getOrderDetail,
     getOrdersByPhone,
+    getOrderStats,
+    deleteOrder,
     getPendingOrders,
     getPendingOrderIdsForRebuild,
     getAllOrders,

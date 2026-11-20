@@ -56,6 +56,11 @@
       res.json({ message: 'Đã hoàn thành đơn hàng', orderId: order.orderId, status: order.status });
     }));
 
+    // Xóa đơn hàng
+    router.delete('/:id', wrap(async (req, res) => {
+      res.json(await orderService.deleteOrder(parseId(req.params.id)));
+    }));
+
     return router;
   }
 
@@ -63,9 +68,15 @@
   function createAdminRouter(orderService) {
     const router = express.Router();
 
-    // Toàn bộ đơn, mới nhất trước; lọc theo ?status=
+    // Xem đơn theo trạng thái và ngày tạo
     router.get('/orders', wrap(async (req, res) => {
-      res.json(await orderService.getAllOrders(req.query.status));
+      const { status, ...range } = req.query;
+      res.json(await orderService.getAllOrders(status, range));
+    }));
+
+    // Thống kê đơn hàng
+    router.get('/stats', wrap(async (req, res) => {
+      res.json(await orderService.getOrderStats(req.query));
     }));
 
     return router;

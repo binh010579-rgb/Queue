@@ -47,3 +47,33 @@ GET {{base}}/orders/pending
 
 ### Chi tiết đơn
 GET {{base}}/orders/4
+
+### Xem tất cả đơn, mới nhất trước
+GET {{base}}/admin/orders
+
+### Xem đơn theo trạng thái
+GET {{base}}/admin/orders?status=CANCELLED
+
+### Tìm đơn theo ngày tạo
+GET {{base}}/admin/orders?from=2026-11-11&to=2026-11-11
+
+### Đơn PENDING trong một ngày
+GET {{base}}/admin/orders?status=PENDING&from=2026-11-10&to=2026-11-10
+
+### Phân trang
+GET {{base}}/admin/orders?from=2026-11-10&to=2026-11-12&limit=3&offset=1
+
+### Ngày không hợp lệ
+GET {{base}}/admin/orders?from=2026-02-30
+
+### Thống kê toàn bộ
+GET {{base}}/admin/stats
+
+### Thống kê theo khoảng ngày
+GET {{base}}/admin/stats?from=2026-11-10&to=2026-11-12
+
+### Xóa đơn đã hủy
+DELETE {{base}}/orders/10
+
+### Xóa đơn đang chờ (báo 409)
+DELETE {{base}}/orders/9

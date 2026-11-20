@@ -15,7 +15,7 @@ function createApp({ orderService, logger = console, corsOrigin = '*' }) {
   // CORS cho frontend
   app.use((req, res, next) => {
     res.set('Access-Control-Allow-Origin', corsOrigin);
-    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     return next();

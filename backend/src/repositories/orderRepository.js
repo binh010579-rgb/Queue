@@ -1,3 +1,5 @@
+const ITEM_BATCH_SIZE = 1000;
+
 // Truy vấn lọc và sắp xếp đơn PENDING
 const SQL_PENDING_IDS = `
   SELECT id
@@ -73,16 +75,73 @@ async function findOrdersByPhone(db, phone) {
 
 // Lấy chi tiết của nhiều đơn
 async function findItemsByOrderIds(db, orderIds) {
-  if (orderIds.length === 0) return [];
+  const rows = [];
+  for (let i = 0; i < orderIds.length; i += ITEM_BATCH_SIZE) {
+    const [batch] = await db.query(
+      `SELECT oi.order_id, oi.product_id, p.name, oi.quantity, oi.unit_price
+       FROM order_items oi
+       JOIN products p ON p.id = oi.product_id
+       WHERE oi.order_id IN (?)
+       ORDER BY oi.order_id, oi.id`,
+      [orderIds.slice(i, i + ITEM_BATCH_SIZE)],
+    );
+    for (const row of batch) rows.push(row);
+  }
+  return rows;
+}
+
+// Điều kiện lọc theo trạng thái và ngày tạo
+function buildFilterWhere(filter) {
+  const conditions = ['status IN (?)'];
+  const params = [filter.statuses];
+  if (filter.from) {
+    conditions.push('created_at >= ?');
+    params.push(filter.from);
+  }
+  if (filter.to) {
+    conditions.push('created_at < ?');
+    params.push(filter.to);
+  }
+  return { where: conditions.join(' AND '), params };
+}
+
+// Lọc đơn theo trạng thái và ngày tạo
+async function findOrders(db, filter) {
+  const { where, params } = buildFilterWhere(filter);
+  let sql = `
+    SELECT id, order_code, customer_name, customer_phone, customer_email,
+           shipping_address, total_amount, status, created_at
+    FROM orders
+    WHERE ${where}
+    ORDER BY created_at DESC, id DESC`;
+  if (filter.limit) {
+    sql += ' LIMIT ? OFFSET ?';
+    params.push(filter.limit, filter.offset || 0);
+  }
+  const [rows] = await db.query(sql, params);
+  return rows;
+}
+
+// Thống kê đơn theo trạng thái
+async function getOrderStats(db, filter) {
+  const { where, params } = buildFilterWhere(filter);
   const [rows] = await db.query(
-    `SELECT oi.order_id, oi.product_id, p.name, oi.quantity, oi.unit_price
-     FROM order_items oi
-     JOIN products p ON p.id = oi.product_id
-     WHERE oi.order_id IN (?)
-     ORDER BY oi.order_id, oi.id`,
-    [orderIds],
+    `SELECT status, COUNT(*) AS so_don, COALESCE(SUM(total_amount), 0) AS tong_tien
+     FROM orders
+     WHERE ${where}
+     GROUP BY status`,
+    params,
   );
   return rows;
+}
+
+// Xóa đơn đã hủy hoặc đã hoàn thành
+async function deleteFinishedOrder(db, orderId) {
+  const [result] = await db.execute(
+    "DELETE FROM orders WHERE id = ? AND status IN ('CANCELLED', 'COMPLETED')",
+    [orderId],
+  );
+  return result.affectedRows === 1;
 }
 
 // Lấy đơn PENDING
@@ -93,18 +152,6 @@ async function getPendingOrderIds(db) {
 
 async function getPendingOrders(db) {
   const [rows] = await db.query(SQL_PENDING_ORDERS);
-  return rows;
-}
-
-// Lấy toàn bộ đơn (mới nhất trước), có thể lọc theo trạng thái - dùng cho Admin
-async function findAllOrders(db, status) {
-  const base = `SELECT id, order_code, customer_name, customer_phone, customer_email,
-            shipping_address, total_amount, status, created_at
-     FROM orders`;
-  const order = ' ORDER BY created_at DESC, id DESC';
-  const [rows] = status
-    ? await db.execute(`${base} WHERE status = ?${order}`, [status])
-    : await db.query(base + order);
   return rows;
 }
 
@@ -127,8 +174,10 @@ module.exports = {
   findOrderById,
   findOrdersByPhone,
   findItemsByOrderIds,
+  findOrders,
+  getOrderStats,
+  deleteFinishedOrder,
   getPendingOrderIds,
   getPendingOrders,
-  findAllOrders,
   updateStatusIf,
 };
