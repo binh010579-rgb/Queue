@@ -33,16 +33,18 @@ backend/
 │   ├── app.js                       Express app, CORS, xử lý lỗi
 │   ├── db.js                        pool MySQL
 │   ├── errors.js
-│   ├── routes/orderRoutes.js        /api/orders (tạo, tra cứu, chi tiết, xóa)
-│   ├── routes/adminRoutes.js        /api/admin (xem theo trạng thái/ngày, thống kê)
+│   ├── routes/orderRoutes.js        /api/orders (tạo, tra cứu, chi tiết, xóa, duyệt/hủy/hoàn thành)
+│                                    và /api/admin (xem theo trạng thái/ngày, thống kê)
 │   ├── services/orderService.js     tạo đơn (transaction), ENQ sau khi commit
 │   ├── repositories/orderRepository.js  toàn bộ câu SQL
 │   ├── validators/orderValidator.js
 │   ├── queue/noopQueue.js           dùng khi chưa có Queue Engine
-│   └── queueEngineClient.js         (của TV6, PR #4) nói chuyện với Engine qua stdin/stdout
+│   └── queue/queueEngineClient.js   (của TV6) nói chuyện với Engine qua stdin/stdout
 ├── tests/
 │   ├── orderValidator.test.js       unit test, không cần Database
-│   └── orders.integration.test.js   test với MySQL thật
+│   ├── orders.integration.test.js   test với MySQL thật
+│   ├── processNext.test.js          (TV5) duyệt đơn tiếp theo
+│   └── adminRoute.test.js           (TV5) route /api/admin/orders
 └── docs/
     ├── TV3_TrinhBay.md              nội dung trình bày/bảo vệ
     └── api_mau.http                 request mẫu (VS Code REST Client)
@@ -132,7 +134,7 @@ Server chạy tại `http://127.0.0.1:8080/api` – đúng địa chỉ mặc đ
 npm test
 ```
 
-`npm test` chạy unit test validator; test tích hợp chỉ chạy khi `.env` có `TEST_DB_NAME` kết thúc bằng `_test` (test sẽ xóa và tạo lại bảng trong database đó).
+`npm test` chạy unit test validator và test duyệt đơn; test tích hợp chỉ chạy khi `.env` có `TEST_DB_NAME` kết thúc bằng `_test` (test sẽ xóa và tạo lại bảng trong database đó).
 
 ## Đặc tả API
 
@@ -277,16 +279,18 @@ Số đo thật trên 200.000 đơn nằm ở `ket_qua/10_explain_tim_kiem.txt`.
 
 ## Phối hợp với thành viên khác
 
-**TV6 (tích hợp Queue Engine)** – `src/server.js` đã nối sẵn `QueueEngineClient` của TV6 (file `src/queueEngineClient.js` trong PR #4). Khi đặt `QUEUE_ENGINE_PATH`, server gọi `start()`: Engine khởi động, `CLEAR`, rồi ENQ lại các id do `getPendingOrderIds()` của TV3 trả về (đúng thứ tự `created_at, id`).
+**TV6 (tích hợp Queue Engine)** – `src/server.js` đã nối sẵn `QueueEngineClient` của TV6 (file `src/queue/queueEngineClient.js`). Khi đặt `QUEUE_ENGINE_PATH`, server gọi `start()`: Engine khởi động, `CLEAR`, rồi ENQ lại các id do `getPendingOrderIds()` của TV3 trả về (đúng thứ tự `created_at, id`).
 
-**TV4 (Queue Engine)** – `QueueEngineClient` cần file chạy đọc lệnh `ENQ/DEQ/PEEK/SIZE/CLEAR` qua stdin và in `READY` khi khởi động. Nhánh `main` hiện chỉ có `server.cpp` (HTTP), chưa có bản này.
+**TV4 (Queue Engine)** – `QueueEngineClient` cần file chạy đọc lệnh `ENQ/DEQ/PEEK/SIZE/CLEAR` qua stdin và in `READY` khi khởi động (mã nguồn ở `queue-engine/src/`, đường dẫn file chạy đặt trong `QUEUE_ENGINE_PATH`).
 
 **TV5 (Admin)** – TV3 đã làm phần truy vấn dữ liệu cho trang Admin:
 - `GET /api/admin/orders` (đúng hàm `getAllOrders()` frontend đang gọi) có thêm `status`, `from`, `to`, `limit`, `offset`. Trang Admin có thể gửi luôn khoảng ngày và trạng thái lên server thay vì tải hết rồi lọc ở trình duyệt.
 - `GET /api/admin/stats` trả sẵn số đơn và tổng tiền theo trạng thái, không cần tải mọi đơn mỗi 5 giây để tự cộng.
 - `DELETE /api/orders/:id` – cần TV5 thêm nút **Xóa** cho đơn đã hủy/hoàn thành và hiển thị `message` khi gặp `409`.
 
-Còn **không thuộc phần TV3**: `POST /orders/process-next`, `POST /orders/:id/cancel`, `POST /orders/:id/complete` (TV5/TV6 thêm vào backend này). Cập nhật trạng thái nên có điều kiện: `UPDATE orders SET status = 'APPROVED' WHERE id = ? AND status = 'PENDING'` rồi kiểm tra `affectedRows === 1`. Vì đơn đã hủy có thể bị xóa, `process-next` gặp id không còn trong Database hoặc không còn `PENDING` thì bỏ qua và DEQ tiếp (lazy deletion).
+`POST /orders/process-next`, `POST /orders/:id/cancel`, `POST /orders/:id/complete` là phần của TV5/TV6 (đã có trên `main`). Các API này cập nhật trạng thái có điều kiện (`updateStatusIf`: `UPDATE ... WHERE id = ? AND status = ?`, kiểm tra `affectedRows === 1`), nên đơn đã bị xóa hay đã hủy khi tới lượt sẽ không cập nhật được và `process-next` tự bỏ qua, DEQ tiếp (lazy deletion).
+
+`GET /api/admin/orders` dùng chung hàm `getAllOrders(status, range)`: TV5 truyền `status` như cũ, TV3 thêm `from`, `to`, `limit`, `offset`. Trạng thái sai giờ báo `400 VALIDATION_ERROR` (frontend chỉ đọc `message` nên không ảnh hưởng).
 
 **TV2 (thanh toán)** – trang đặt hàng gọi `POST /api/orders`; chỉ khi nhận `201` thì đơn mới được tạo và đưa vào hàng chờ.
 

@@ -155,6 +155,16 @@ async function getPendingOrders(db) {
   return rows;
 }
 
+// Cập nhật trạng thái có điều kiện: chỉ đổi khi đơn đang ở trạng thái "from".
+// Trả true khi đúng 1 dòng bị thay đổi (chống xử lý trùng).
+async function updateStatusIf(db, orderId, from, to) {
+  const [result] = await db.execute(
+    'UPDATE orders SET status = ? WHERE id = ? AND status = ?',
+    [to, orderId, from],
+  );
+  return result.affectedRows === 1;
+}
+
 module.exports = {
   SQL_PENDING_IDS,
   SQL_PENDING_ORDERS,
@@ -169,4 +179,5 @@ module.exports = {
   deleteFinishedOrder,
   getPendingOrderIds,
   getPendingOrders,
+  updateStatusIf,
 };

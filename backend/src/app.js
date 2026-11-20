@@ -1,7 +1,6 @@
 const express = require('express');
 const { AppError } = require('./errors');
-const { createOrderRouter } = require('./routes/orderRoutes');
-const { createAdminRouter } = require('./routes/adminRoutes');
+const { createOrderRouter, createAdminRouter } = require('./routes/orderRoutes');
 
 // Trả lỗi dạng JSON
 function sendError(res, status, code, message, details) {

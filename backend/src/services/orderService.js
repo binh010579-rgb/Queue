@@ -176,15 +176,6 @@ function createOrderService({ pool, queue, logger = console }) {
     return rows.map((row) => formatHistoryOrder(row, itemsByOrder.get(row.id) || []));
   }
 
-  // Lọc đơn theo trạng thái và ngày tạo
-  async function listOrders(query) {
-    const filter = validateOrderFilter(query, { paging: true });
-    const rows = await repo.findOrders(pool, filter);
-    const itemRows = await repo.findItemsByOrderIds(pool, rows.map((row) => row.id));
-    const itemsByOrder = groupItemsByOrder(itemRows);
-    return rows.map((row) => formatOrder(row, itemsByOrder.get(row.id) || []));
-  }
-
   // Thống kê đơn hàng
   async function getOrderStats(query) {
     const filter = validateOrderFilter(query);
@@ -233,15 +224,72 @@ function createOrderService({ pool, queue, logger = console }) {
     return repo.getPendingOrderIds(pool);
   }
 
+  // Danh sách đơn cho Admin (mới nhất trước), lọc theo trạng thái và ngày tạo
+  async function getAllOrders(status, range = {}) {
+    const filter = validateOrderFilter({ ...range, status }, { paging: true });
+    const rows = await repo.findOrders(pool, filter);
+    const itemRows = await repo.findItemsByOrderIds(pool, rows.map((row) => row.id));
+    const itemsByOrder = groupItemsByOrder(itemRows);
+    return rows.map((row) => formatOrder(row, itemsByOrder.get(row.id) || []));
+  }
+
+  // Đổi trạng thái có điều kiện; không đổi được thì phân biệt 404 và 409
+  async function changeStatus(orderId, from, to, conflictMessage) {
+    if (await repo.updateStatusIf(pool, orderId, from, to)) return getOrderDetail(orderId);
+    const row = await repo.findOrderById(pool, orderId);
+    if (!row) throw new AppError(404, 'ORDER_NOT_FOUND', 'Không tìm thấy đơn hàng');
+    throw new AppError(409, 'INVALID_STATUS', conflictMessage, { status: row.status });
+  }
+
+  // Hủy đơn (chỉ PENDING). Đơn vẫn còn trong Queue, sẽ bị bỏ qua khi tới lượt
+  function cancelOrder(orderId) {
+    return changeStatus(orderId, 'PENDING', 'CANCELLED', 'Chỉ hủy được đơn đang chờ xử lý (PENDING)');
+  }
+
+  // Hoàn thành đơn (chỉ APPROVED)
+  function completeOrder(orderId) {
+    return changeStatus(orderId, 'APPROVED', 'COMPLETED', 'Chỉ hoàn thành được đơn đã duyệt (APPROVED)');
+  }
+
+  // Xử lý đơn tiếp theo: DEQ lặp cho đến khi duyệt được 1 đơn hoặc Queue rỗng.
+  // Nếu Backend dừng giữa DEQ và UPDATE thì đơn vẫn PENDING trong DB, lần khôi phục sau sẽ nạp lại.
+  async function processNextOrder() {
+    if (typeof queue.approveNext !== 'function') {
+      throw new AppError(503, 'QUEUE_UNAVAILABLE', 'Chưa kết nối Queue Engine');
+    }
+    let skipped = 0;
+    let orderId;
+    try {
+      orderId = await queue.approveNext(async (id) => {
+        const ok = await repo.updateStatusIf(pool, id, 'PENDING', 'APPROVED');
+        if (!ok) skipped += 1;
+        return ok;
+      });
+    } catch (err) {
+      if (err && err.name === 'EngineError') {
+        logger.error(`[queue] Lỗi Engine khi xử lý đơn: ${err.message}`);
+        throw new AppError(503, 'QUEUE_ENGINE_ERROR', 'Queue Engine đang gặp sự cố, thử lại sau');
+      }
+      throw err;
+    }
+    if (orderId === null) {
+      throw new AppError(409, 'QUEUE_EMPTY', 'Hàng đợi đang rỗng!', { skipped });
+    }
+    return { orderId, skipped };
+  }
+
   return {
     createOrder,
     getOrderDetail,
     getOrdersByPhone,
-    listOrders,
     getOrderStats,
     deleteOrder,
     getPendingOrders,
     getPendingOrderIdsForRebuild,
+    getAllOrders,
+    cancelOrder,
+    completeOrder,
+    processNextOrder,
   };
 }
 

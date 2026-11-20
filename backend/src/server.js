@@ -11,7 +11,7 @@ const repo = require('./repositories/orderRepository');
 function createQueue(pool) {
   const enginePath = process.env.QUEUE_ENGINE_PATH;
   if (!enginePath) return createNoopQueue();
-  const { QueueEngineClient } = require('./queueEngineClient');
+  const { QueueEngineClient } = require('./queue/queueEngineClient');
   return new QueueEngineClient({
     enginePath: path.resolve(enginePath),
     getPendingIds: () => repo.getPendingOrderIds(pool),

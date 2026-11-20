@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+// [TV5 - CẬP NHẬT] Bổ sung hook `useMemo` để tối ưu tính toán thống kê và bộ lọc
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   cancelOrder,
   completeOrder,
@@ -12,6 +13,16 @@ const formatPrice = (price: number) =>
   new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(price);
 
 const formatTime = (iso: string) => new Date(iso).toLocaleString("vi-VN");
+
+// [TV5 - THÊM MỚI] Hàm chuẩn hóa thời gian tạo đơn sang YYYY-MM-DD theo múi giờ máy (tránh lệch ngày UTC)
+const toLocalDateKey = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 const statusDetails: Record<OrderStatus, { label: string; className: string }> = {
   PENDING: { label: "Chờ xử lý", className: "bg-[#fff3cd] text-[#8a6512]" },
@@ -30,7 +41,11 @@ const filters: { value: OrderStatus | "ALL"; label: string }[] = [
 
 export default function Admin() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
-  const [filter, setFilter] = useState<OrderStatus | "ALL">("ALL");
+  const [filter, setFilter] = useState<OrderStatus | "ALL">("PENDING");
+  // [TV5 - THÊM MỚI] State lưu ngày tạo cần lọc (YYYY-MM-DD) và từ khóa tìm kiếm nhanh
+  const [dateFilter, setDateFilter] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -90,8 +105,66 @@ export default function Admin() {
       return `Đơn #${id} đã hoàn thành`;
     });
 
-  const pendingCount = orders.filter((o) => o.status === "PENDING").length;
-  const shown = filter === "ALL" ? orders : orders.filter((o) => o.status === filter);
+  // [TV5 - THÊM MỚI] Bước 1: Lọc danh sách đơn theo ngày tạo (nếu người dùng có chọn ngày)
+  const ordersByDate = useMemo(() => {
+    if (!dateFilter) return orders;
+    return orders.filter((o) => toLocalDateKey(o.createdAt) === dateFilter);
+  }, [orders, dateFilter]);
+
+  // [TV5 - THÊM MỚI] Bước 2: Thống kê tổng số đơn, tổng giá trị và số đơn theo từng trạng thái
+  const stats = useMemo(() => {
+    const counts: Record<OrderStatus, number> = {
+      PENDING: 0,
+      APPROVED: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+    };
+    let totalValue = 0;
+    let validValue = 0; // Tổng doanh thu các đơn hợp lệ (không tính đơn đã hủy)
+
+    for (const o of ordersByDate) {
+      counts[o.status] += 1;
+      const amount = Number(o.total) || 0;
+      totalValue += amount;
+      if (o.status !== "CANCELLED") {
+        validValue += amount;
+      }
+    }
+
+    return {
+      totalOrders: ordersByDate.length,
+      totalValue,
+      validValue,
+      counts,
+    };
+  }, [ordersByDate]);
+
+  // [TV5 - CẬP NHẬT] Thứ tự hàng chờ FIFO toàn cục (tính từ toàn bộ orders để luôn khớp với C++ Engine)
+  const queueOrder = useMemo(
+    () =>
+      orders
+        .filter((o) => o.status === "PENDING")
+        .sort((x, y) => x.orderId - y.orderId)
+        .map((o) => o.orderId),
+    [orders],
+  );
+
+  // [TV5 - CẬP NHẬT] Kết hợp lọc ngày + lọc trạng thái + tìm nhanh mã đơn/tên/SĐT, giữ thứ tự FIFO
+  const shown = useMemo(() => {
+    const keyword = searchQuery.trim().toLowerCase().replace(/^#/, "");
+    return ordersByDate
+      .filter((o) => (filter === "ALL" ? true : o.status === filter))
+      .filter((o) => {
+        if (!keyword) return true;
+        return (
+          String(o.orderId).includes(keyword) ||
+          (o.customerName || "").toLowerCase().includes(keyword) ||
+          (o.phone || "").includes(keyword)
+        );
+      })
+      .slice()
+      .sort((x, y) => x.orderId - y.orderId);
+  }, [ordersByDate, filter, searchQuery]);
 
   return (
     <div className="min-h-screen bg-[#fff9fa] text-[#30292c]">
@@ -110,8 +183,10 @@ export default function Admin() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold">Quản lý đơn hàng</h2>
+            {/* [TV5 - CẬP NHẬT] Hiển thị số đơn dựa trên kết quả thống kê và ngày đang lọc (nếu có) */}
             <p className="mt-1 text-sm text-[#7a6b70]">
-              {pendingCount} đơn đang chờ xử lý · tổng {orders.length} đơn
+              {stats.counts.PENDING} đơn đang chờ xử lý · tổng {stats.totalOrders} đơn
+              {dateFilter ? ` (ngày ${dateFilter.split("-").reverse().join("/")})` : ""}
             </p>
           </div>
           <div className="flex gap-2">
@@ -132,6 +207,37 @@ export default function Admin() {
           </div>
         </div>
 
+        {/* [TV5 - THÊM MỚI] Khu vực 6 thẻ thống kê: Tổng số đơn, Tổng giá trị & Số đơn theo từng trạng thái */}
+        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-2xl border border-[#f3e4e8] bg-white p-4">
+            <p className="text-xs font-medium text-[#7a6b70]">Tổng số đơn</p>
+            <p className="mt-1 text-2xl font-bold text-[#30292c]">{stats.totalOrders}</p>
+          </div>
+          <div className="rounded-2xl border border-[#f3e4e8] bg-white p-4">
+            <p className="text-xs font-medium text-[#7a6b70]">Tổng giá trị (hợp lệ)</p>
+            <p className="mt-1 text-lg font-bold text-[#e84f70]">{formatPrice(stats.validValue)}</p>
+            <p className="mt-0.5 text-[11px] text-[#9a898e]">
+              Gồm đơn hủy: {formatPrice(stats.totalValue)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-[#f3e4e8] bg-white p-4">
+            <p className="text-xs font-medium text-[#8a6512]">Chờ xử lý</p>
+            <p className="mt-1 text-2xl font-bold text-[#8a6512]">{stats.counts.PENDING}</p>
+          </div>
+          <div className="rounded-2xl border border-[#f3e4e8] bg-white p-4">
+            <p className="text-xs font-medium text-[#29704b]">Đã duyệt</p>
+            <p className="mt-1 text-2xl font-bold text-[#29704b]">{stats.counts.APPROVED}</p>
+          </div>
+          <div className="rounded-2xl border border-[#f3e4e8] bg-white p-4">
+            <p className="text-xs font-medium text-[#28639b]">Hoàn thành</p>
+            <p className="mt-1 text-2xl font-bold text-[#28639b]">{stats.counts.COMPLETED}</p>
+          </div>
+          <div className="rounded-2xl border border-[#f3e4e8] bg-white p-4">
+            <p className="text-xs font-medium text-[#92566a]">Đã hủy</p>
+            <p className="mt-1 text-2xl font-bold text-[#92566a]">{stats.counts.CANCELLED}</p>
+          </div>
+        </section>
+
         {notice && (
           <p className="mt-4 rounded-xl bg-[#dff5e8] px-4 py-3 text-sm text-[#29704b]">{notice}</p>
         )}
@@ -139,21 +245,53 @@ export default function Admin() {
           <p className="mt-4 rounded-xl bg-[#f1e4e8] px-4 py-3 text-sm text-[#92566a]">{error}</p>
         )}
 
-        <div className="mt-6 flex flex-wrap gap-2">
-          {filters.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
-              className={
-                "rounded-full border px-4 py-1.5 text-sm font-medium " +
-                (filter === f.value
-                  ? "border-[#ff6b8b] bg-[#ff6b8b] text-white"
-                  : "border-[#eadadd] bg-white hover:border-[#ff9eb3]")
-              }
-            >
-              {f.label}
-            </button>
-          ))}
+        {/* [TV5 - CẬP NHẬT] Thanh lọc kết hợp: Lọc theo trạng thái + Tìm đơn theo ngày tạo + Tìm nhanh */}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {filters.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => setFilter(f.value)}
+                className={
+                  "rounded-full border px-4 py-1.5 text-sm font-medium " +
+                  (filter === f.value
+                    ? "border-[#ff6b8b] bg-[#ff6b8b] text-white"
+                    : "border-[#eadadd] bg-white hover:border-[#ff9eb3]")
+                }
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* [TV5 - THÊM MỚI] Bộ lọc tìm đơn theo ngày tạo & ô tìm kiếm mã đơn / SĐT */}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 rounded-full border border-[#eadadd] bg-white px-4 py-1.5 text-sm">
+              <span className="text-xs font-medium text-[#7a6b70]">Ngày tạo:</span>
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="bg-transparent text-sm outline-none"
+              />
+            </label>
+            {dateFilter && (
+              <button
+                onClick={() => setDateFilter("")}
+                className="rounded-full border border-[#eadadd] bg-white px-3 py-1.5 text-xs font-semibold text-[#7a6b70] hover:border-[#ff9eb3] hover:text-[#ff5e81]"
+              >
+                Xóa ngày
+              </button>
+            )}
+
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Tìm mã đơn, tên, SĐT..."
+              className="rounded-full border border-[#eadadd] bg-white px-4 py-1.5 text-sm outline-none focus:border-[#ff8ca5]"
+            />
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto rounded-2xl border border-[#f3e4e8] bg-white">
@@ -165,6 +303,7 @@ export default function Admin() {
                 <th className="px-4 py-3">Sản phẩm</th>
                 <th className="px-4 py-3">Tổng tiền</th>
                 <th className="px-4 py-3">Thời gian tạo</th>
+                <th className="px-4 py-3">Lượt xử lý</th>
                 <th className="px-4 py-3">Trạng thái</th>
                 <th className="px-4 py-3">Thao tác</th>
               </tr>
@@ -172,7 +311,7 @@ export default function Admin() {
             <tbody>
               {shown.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-[#7a6b70]">
+                  <td colSpan={8} className="px-4 py-10 text-center text-[#7a6b70]">
                     Không có đơn nào.
                   </td>
                 </tr>
@@ -191,6 +330,13 @@ export default function Admin() {
                   </td>
                   <td className="px-4 py-3">{formatPrice(o.total)}</td>
                   <td className="px-4 py-3">{formatTime(o.createdAt)}</td>
+                  <td className="px-4 py-3 font-semibold">
+                    {o.status === "PENDING"
+                      ? queueOrder.indexOf(o.orderId) === 0
+                        ? "Kế tiếp ▶"
+                        : `Lượt ${queueOrder.indexOf(o.orderId) + 1}`
+                      : "—"}
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       className={
@@ -202,6 +348,15 @@ export default function Admin() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
+                    {o.status === "PENDING" && queueOrder[0] === o.orderId && (
+                      <button
+                        onClick={handleProcessNext}
+                        disabled={busy}
+                        className="mr-2 rounded-full bg-[#29704b] px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                      >
+                        Duyệt
+                      </button>
+                    )}
                     {o.status === "PENDING" && (
                       <button
                         onClick={() => handleCancel(o.orderId)}

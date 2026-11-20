@@ -6,7 +6,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test tests/orderValidator.test.js tests/orders.integration.test.js"
+    "test": "node --test tests/orderValidator.test.js tests/orders.integration.test.js tests/processNext.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
