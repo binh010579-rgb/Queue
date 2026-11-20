@@ -1,6 +1,7 @@
 const express = require('express');
 const { AppError } = require('./errors');
 const { createOrderRouter } = require('./routes/orderRoutes');
+const { createAdminRouter } = require('./routes/adminRoutes');
 
 // Trả lỗi dạng JSON
 function sendError(res, status, code, message, details) {
@@ -15,7 +16,7 @@ function createApp({ orderService, logger = console, corsOrigin = '*' }) {
   // CORS cho frontend
   app.use((req, res, next) => {
     res.set('Access-Control-Allow-Origin', corsOrigin);
-    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     return next();
@@ -26,6 +27,7 @@ function createApp({ orderService, logger = console, corsOrigin = '*' }) {
 
   // Routes
   app.use('/api/orders', createOrderRouter(orderService));
+  app.use('/api/admin', createAdminRouter(orderService));
 
   // Không tìm thấy route
   app.use((req, res) => sendError(res, 404, 'NOT_FOUND', 'Không tìm thấy đường dẫn'));

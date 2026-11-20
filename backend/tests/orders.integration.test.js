@@ -210,4 +210,69 @@ describe('Tích hợp Database (TV3)', { skip: SKIP }, () => {
     const badId = await getJson('/api/orders/abc');
     assert.equal(badId.status, 400);
   });
+
+  // Xem theo trạng thái và tìm theo ngày tạo
+  it('GET /api/admin/orders lọc theo trạng thái, mới nhất trước', async () => {
+    const res = await getJson('/api/admin/orders?status=CANCELLED');
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.map((o) => o.orderId), [10, 3]);
+    assert.equal(res.body[0].customerName, 'Dương Mỹ Duyên');
+    assert.equal(res.body[0].items.length, 2);
+  });
+
+  it('GET /api/admin/orders tìm theo ngày tạo', async () => {
+    const oneDay = await getJson('/api/admin/orders?from=2026-11-11&to=2026-11-11');
+    assert.deepEqual(oneDay.body.map((o) => o.orderId), [14, 13, 12, 11, 10]);
+
+    const pendingInRange = await getJson('/api/admin/orders?status=PENDING&from=2026-11-10&to=2026-11-10');
+    assert.deepEqual(pendingInRange.body.map((o) => o.orderId), [7, 8, 5, 4, 2, 9]);
+
+    const page = await getJson('/api/admin/orders?from=2026-11-10&to=2026-11-12&limit=3&offset=1');
+    assert.deepEqual(page.body.map((o) => o.orderId), [15, 14, 13]);
+
+    const bad = await getJson('/api/admin/orders?from=2026-13-01');
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.code, 'VALIDATION_ERROR');
+  });
+
+  // Thống kê
+  it('GET /api/admin/stats thống kê số đơn và tổng giá trị', async () => {
+    const res = await getJson('/api/admin/stats?from=2026-11-10&to=2026-11-12');
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, {
+      totalOrders: 16,
+      totalValue: 11013000,
+      validValue: 9859000,
+      byStatus: {
+        PENDING: { count: 10, value: 6794000 },
+        APPROVED: { count: 2, value: 1557000 },
+        COMPLETED: { count: 2, value: 1508000 },
+        CANCELLED: { count: 2, value: 1154000 },
+      },
+    });
+
+    const oneDay = await getJson('/api/admin/stats?from=2026-11-10&to=2026-11-10');
+    assert.equal(oneDay.body.totalOrders, 9);
+    assert.equal(oneDay.body.byStatus.PENDING.count, 6);
+  });
+
+  // Xóa đơn
+  it('DELETE /api/orders/:id chỉ xóa đơn đã hủy hoặc đã hoàn thành', async () => {
+    const created = await postOrder({ ...customer, items: [{ productId: 1, quantity: 1 }] });
+    const id = created.body.orderId;
+
+    const pending = await fetch(`${baseUrl}/api/orders/${id}`, { method: 'DELETE' });
+    assert.equal(pending.status, 409);
+    assert.equal((await pending.json()).code, 'ORDER_NOT_DELETABLE');
+
+    await pool.query("UPDATE orders SET status = 'CANCELLED' WHERE id = ?", [id]);
+    const ok = await fetch(`${baseUrl}/api/orders/${id}`, { method: 'DELETE' });
+    assert.equal(ok.status, 200);
+    assert.equal((await getJson(`/api/orders/${id}`)).status, 404);
+    const [items] = await pool.query('SELECT COUNT(*) AS n FROM order_items WHERE order_id = ?', [id]);
+    assert.equal(items[0].n, 0);
+
+    const notFound = await fetch(`${baseUrl}/api/orders/${id}`, { method: 'DELETE' });
+    assert.equal(notFound.status, 404);
+  });
 });

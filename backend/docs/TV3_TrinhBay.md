@@ -110,6 +110,21 @@ n = tổng số đơn, m = số đơn PENDING.
 
 Tạo một đơn có k dòng sản phẩm: tra giá k sản phẩm theo khóa chính O(k log n), chèn đơn + k dòng chi tiết O(k log n), rồi `ENQ` O(1).
 
+### Xem theo trạng thái, tìm theo ngày tạo, thống kê, xóa đơn
+
+Cùng dùng lại chỉ mục `(status, created_at, id)`, không tạo thêm chỉ mục. k = số đơn trả về.
+
+| Chức năng (API) | Câu SQL chính | Cách MySQL chạy (200.000 đơn, `sql/10`) | Độ phức tạp |
+|---|---|---|---|
+| Xem theo trạng thái `GET /api/admin/orders?status=` | `WHERE status = ? ORDER BY created_at DESC, id DESC` | `ref` + `Backward index scan`, không filesort | O(log n + k) |
+| Tìm theo ngày tạo `GET /api/admin/orders?from=&to=` | `WHERE status IN (4 trạng thái) AND created_at >= ? AND created_at < ?` | `range`, 4 khoảng, 1.152 dòng, ≈4,7 ms | O(log n + k log k) |
+| Thống kê `GET /api/admin/stats` | `SELECT status, COUNT(*), SUM(total_amount) ... GROUP BY status` | quét chỉ mục | O(n) |
+| Xóa đơn `DELETE /api/orders/:id` | `DELETE ... WHERE id = ? AND status IN ('CANCELLED','COMPLETED')` | khóa chính, `order_items` xóa theo (CASCADE) | O(log n) |
+
+- **Tìm theo ngày** ghi thêm `status IN (đủ 4 trạng thái)` dù không lọc trạng thái: cột đầu của chỉ mục là `status`, có điều kiện trên `status` thì MySQL mới nhảy thẳng vào 4 đoạn `created_at` cần tìm thay vì quét hết. Kết quả của 4 đoạn được trộn lại bằng một lần sắp xếp k dòng (k log k), rất nhỏ so với n.
+- **Khoảng ngày** dùng `created_at >= from AND created_at < to + 1 ngày` (nửa mở) để lấy trọn ngày `to`, kể cả đơn lúc 23:59:59.999.
+- **Chỉ xóa đơn đã kết thúc**: đơn `PENDING` có thể đang nằm trong Queue. Điều kiện trạng thái nằm ngay trong câu `DELETE` nên không có khe hở giữa "kiểm tra" và "xóa".
+
 ## 8. Bộ dữ liệu kiểm thử (`sql/02_du_lieu_kiem_thu.sql`)
 
 | id | created_at | status | Kiểm tra điều gì |
@@ -163,6 +178,7 @@ TV5 (Admin): DEQ ──► UPDATE ... WHERE id = ? AND status = 'PENDING' (dùng
 4. Chạy `05`, `06` → chỉ vào `type = ALL`, `Using filesort`, ~200.000 rows.
 5. Chạy `07`, `08` → `type = ref`, `key = idx_orders_status_created_id`, `Using index`, 4.000 rows.
 6. (Nếu server chạy) gửi request "Tạo đơn hợp lệ" trong `docs/api_mau.http` → gọi `GET /api/orders/pending` → đơn mới nằm cuối.
+7. (Nếu còn thời gian) chạy `09` trên 16 đơn → thống kê theo trạng thái, tìm ngày 11/11 ra 5 đơn; chạy `10` → tìm theo ngày dùng `range` trên cùng chỉ mục.
 
 ## 11. Câu hỏi bảo vệ dự kiến
 
@@ -189,6 +205,12 @@ Có thể lệch nhau vài mili giây vì ENQ đi theo thứ tự commit. Cả h
 
 **Nếu Queue Engine đang tắt khi khách đặt hàng?**
 API vẫn lưu đơn `PENDING` và trả `201`; ENQ lỗi chỉ được ghi log. TV6 phát hiện Engine dừng, khởi động lại, `CLEAR` rồi nạp lại từ truy vấn của TV3 – đơn đó có mặt trong hàng chờ.
+
+**Xóa đơn khi id đó vẫn còn trong Queue thì sao?**
+Chỉ xóa được đơn `CANCELLED`/`COMPLETED`, mà đơn hủy có thể vẫn còn id trong Queue (xóa lười – lazy deletion). Khi Admin lấy đơn kế tiếp, id không còn trong Database hoặc không còn `PENDING` thì bỏ qua và lấy tiếp. Đơn `PENDING` thì API trả `409`, không xóa.
+
+**Thống kê O(n) có chậm không?**
+Phải đọc mọi đơn nên không tránh được O(n). MySQL quét chỉ mục `(status, ...)` theo thứ tự `status` nên gom nhóm không cần bảng tạm hay sắp xếp. Nếu dữ liệu lớn hơn nhiều, có thể lọc theo khoảng ngày (`from`, `to`) hoặc lưu sẵn bảng tổng hợp theo ngày.
 
 **Vì sao không dùng `ORDER BY ... LIMIT 1` mỗi lần Admin bấm xử lý?**
 Mục tiêu môn học là tự cài đặt Queue FIFO; Queue lấy đơn kế tiếp O(1) trong bộ nhớ. Truy vấn của TV3 chỉ dùng khi cần dựng lại Queue từ Database.

@@ -2,8 +2,11 @@ const { AppError } = require('../errors');
 
 const PHONE_REGEX = /^(0|\+84)\d{9,10}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const ORDER_STATUSES = ['PENDING', 'APPROVED', 'COMPLETED', 'CANCELLED'];
 const MAX_ITEMS = 50;
 const MAX_QUANTITY = 99;
+const MAX_PAGE_SIZE = 1000;
 
 // Hàm hỗ trợ
 function cleanText(value) {
@@ -97,4 +100,97 @@ function validatePhoneQuery(value) {
   return phone;
 }
 
-module.exports = { validateCreateOrder, validatePhoneQuery, normalizePhone, MAX_ITEMS, MAX_QUANTITY };
+// Hàm hỗ trợ ngày và số trang
+function parseDate(value) {
+  if (typeof value !== 'string' || !DATE_REGEX.test(value.trim())) return null;
+  const [y, m, d] = value.trim().split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const isRealDate = date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+  return isRealDate ? date : null;
+}
+
+function formatDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function isMissing(value) {
+  return value === undefined || value === null || value === '';
+}
+
+function toNonNegativeInt(value) {
+  if (typeof value !== 'string' || !/^\d+$/.test(value.trim())) return null;
+  const number = Number(value.trim());
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+// Kiểm tra bộ lọc đơn hàng
+function validateOrderFilter(query, { paging = false } = {}) {
+  const errors = [];
+  const q = query && typeof query === 'object' ? query : {};
+  const filter = { statuses: ORDER_STATUSES, from: null, to: null };
+
+  if (!isMissing(q.status)) {
+    const status = String(q.status).trim().toUpperCase();
+    if (ORDER_STATUSES.includes(status)) {
+      filter.statuses = [status];
+    } else {
+      errors.push({ field: 'status', message: `Trạng thái phải là ${ORDER_STATUSES.join(', ')}` });
+    }
+  }
+
+  const fromDate = isMissing(q.from) ? null : parseDate(String(q.from));
+  const toDate = isMissing(q.to) ? null : parseDate(String(q.to));
+  if (!isMissing(q.from) && !fromDate) {
+    errors.push({ field: 'from', message: 'Ngày bắt đầu phải có dạng YYYY-MM-DD' });
+  }
+  if (!isMissing(q.to) && !toDate) {
+    errors.push({ field: 'to', message: 'Ngày kết thúc phải có dạng YYYY-MM-DD' });
+  }
+  if (fromDate && toDate && fromDate > toDate) {
+    errors.push({ field: 'to', message: 'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu' });
+  }
+  if (fromDate) filter.from = `${formatDate(fromDate)} 00:00:00`;
+  if (toDate) {
+    const nextDay = new Date(toDate.getTime() + 24 * 60 * 60 * 1000);
+    filter.to = `${formatDate(nextDay)} 00:00:00`;
+  }
+
+  if (paging) {
+    filter.limit = null;
+    filter.offset = 0;
+    if (!isMissing(q.limit)) {
+      const limit = toNonNegativeInt(String(q.limit));
+      if (limit === null || limit < 1 || limit > MAX_PAGE_SIZE) {
+        errors.push({ field: 'limit', message: `limit phải là số nguyên từ 1 đến ${MAX_PAGE_SIZE}` });
+      } else {
+        filter.limit = limit;
+      }
+    }
+    if (!isMissing(q.offset)) {
+      const offset = toNonNegativeInt(String(q.offset));
+      if (offset === null) {
+        errors.push({ field: 'offset', message: 'offset phải là số nguyên không âm' });
+      } else if (isMissing(q.limit)) {
+        errors.push({ field: 'offset', message: 'offset phải đi kèm limit' });
+      } else {
+        filter.offset = offset;
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new AppError(400, 'VALIDATION_ERROR', errors[0].message, errors);
+  }
+  return filter;
+}
+
+module.exports = {
+  validateCreateOrder,
+  validatePhoneQuery,
+  validateOrderFilter,
+  normalizePhone,
+  ORDER_STATUSES,
+  MAX_ITEMS,
+  MAX_QUANTITY,
+  MAX_PAGE_SIZE,
+};
