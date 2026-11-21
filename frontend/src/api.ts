@@ -107,14 +107,63 @@ export async function processNextOrder(): Promise<{
   return response.json();
 }
 
-// 4. Lấy toàn bộ đơn (mới nhất trước), có thể lọc theo trạng thái
-export async function getAllOrders(status?: OrderStatus): Promise<AdminOrder[]> {
-  const query = status ? `?status=${status}` : "";
+// Khoảng ngày tạo đơn (định dạng YYYY-MM-DD), gửi lên backend để lọc
+export type DateRange = { from?: string; to?: string };
+
+function buildQuery(params: Record<string, string | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.set(key, value);
+  }
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}
+
+// 4. Lấy toàn bộ đơn (mới nhất trước), lọc theo trạng thái và ngày tạo ngay ở backend
+export async function getAllOrders(
+  status?: OrderStatus,
+  range: DateRange = {},
+): Promise<AdminOrder[]> {
+  const query = buildQuery({ status, from: range.from, to: range.to });
   const response = await fetch(`${API_BASE_URL}/admin/orders${query}`);
   if (!response.ok) {
     throw new Error(await readError(response, `Lỗi tải danh sách đơn: ${response.status}`));
   }
   return response.json();
+}
+
+// Thống kê do backend tính (GET /admin/stats)
+export type OrderStats = {
+  totalOrders: number;
+  totalValue: number;
+  validValue: number; // không tính đơn đã hủy
+  byStatus: Record<OrderStatus, { count: number; value: number }>;
+};
+
+export async function getOrderStats(range: DateRange = {}): Promise<OrderStats> {
+  const query = buildQuery({ from: range.from, to: range.to });
+  const response = await fetch(`${API_BASE_URL}/admin/stats${query}`);
+  if (!response.ok) {
+    throw new Error(await readError(response, `Lỗi tải thống kê: ${response.status}`));
+  }
+  return response.json();
+}
+
+// Xem chi tiết một đơn (GET /orders/:id)
+export async function getOrderDetail(orderId: number): Promise<AdminOrder> {
+  const response = await fetch(`${API_BASE_URL}/orders/${orderId}`);
+  if (!response.ok) {
+    throw new Error(await readError(response, "Không tìm thấy đơn hàng."));
+  }
+  return response.json();
+}
+
+// Xóa đơn (backend chỉ cho xóa đơn đã hủy hoặc đã hoàn thành)
+export async function deleteOrder(orderId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Không thể xóa đơn này."));
+  }
 }
 
 // 5. Hủy đơn (chỉ đơn PENDING)
