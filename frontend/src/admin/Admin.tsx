@@ -3,9 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   cancelOrder,
   completeOrder,
+  deleteOrder,
   getAllOrders,
+  getOrderStats,
   processNextOrder,
   type AdminOrder,
+  type OrderStats,
   type OrderStatus,
 } from "../api";
 
@@ -13,16 +16,6 @@ const formatPrice = (price: number) =>
   new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(price);
 
 const formatTime = (iso: string) => new Date(iso).toLocaleString("vi-VN");
-
-// [TV5 - THÊM MỚI] Hàm chuẩn hóa thời gian tạo đơn sang YYYY-MM-DD theo múi giờ máy (tránh lệch ngày UTC)
-const toLocalDateKey = (iso: string) => {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-};
 
 const statusDetails: Record<OrderStatus, { label: string; className: string }> = {
   PENDING: { label: "Chờ xử lý", className: "bg-[#fff3cd] text-[#8a6512]" },
@@ -46,22 +39,36 @@ export default function Admin() {
   const [dateFilter, setDateFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
+  // Thống kê lấy từ backend (GET /admin/stats)
+  const [orderStats, setOrderStats] = useState<OrderStats | null>(null);
+  // Danh sách PENDING toàn cục (không lọc ngày) để tính đúng thứ tự hàng chờ FIFO
+  const [pendingIds, setPendingIds] = useState<number[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  // Tải đơn + thống kê theo ngày tạo (lọc ở backend), và hàng chờ PENDING toàn cục
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setOrders(await getAllOrders());
+      const range = dateFilter ? { from: dateFilter, to: dateFilter } : {};
+      const [list, stats, pending] = await Promise.all([
+        getAllOrders(undefined, range),
+        getOrderStats(range),
+        getAllOrders("PENDING"),
+      ]);
+      setOrders(list);
+      setOrderStats(stats);
+      setPendingIds(pending.map((o) => o.orderId));
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Không thể tải danh sách đơn.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateFilter]);
 
   // Tải khi mở trang và tự làm mới mỗi 5 giây
   useEffect(() => {
@@ -105,49 +112,32 @@ export default function Admin() {
       return `Đơn #${id} đã hoàn thành`;
     });
 
-  // [TV5 - THÊM MỚI] Bước 1: Lọc danh sách đơn theo ngày tạo (nếu người dùng có chọn ngày)
-  const ordersByDate = useMemo(() => {
-    if (!dateFilter) return orders;
-    return orders.filter((o) => toLocalDateKey(o.createdAt) === dateFilter);
-  }, [orders, dateFilter]);
+  const handleDelete = (id: number) => {
+    if (!window.confirm(`Xóa vĩnh viễn đơn #${id}?`)) return Promise.resolve();
+    return run(async () => {
+      await deleteOrder(id);
+      return `Đã xóa đơn #${id}`;
+    });
+  };
 
-  // [TV5 - THÊM MỚI] Bước 2: Thống kê tổng số đơn, tổng giá trị và số đơn theo từng trạng thái
-  const stats = useMemo(() => {
-    const counts: Record<OrderStatus, number> = {
-      PENDING: 0,
-      APPROVED: 0,
-      COMPLETED: 0,
-      CANCELLED: 0,
-    };
-    let totalValue = 0;
-    let validValue = 0; // Tổng doanh thu các đơn hợp lệ (không tính đơn đã hủy)
+  // Backend đã lọc theo ngày, nên danh sách này chính là danh sách theo ngày
+  const ordersByDate = orders;
 
-    for (const o of ordersByDate) {
-      counts[o.status] += 1;
-      const amount = Number(o.total) || 0;
-      totalValue += amount;
-      if (o.status !== "CANCELLED") {
-        validValue += amount;
-      }
-    }
+  // Thống kê: dùng số liệu từ backend
+  const stats = {
+    totalOrders: orderStats?.totalOrders ?? 0,
+    totalValue: orderStats?.totalValue ?? 0,
+    validValue: orderStats?.validValue ?? 0,
+    counts: {
+      PENDING: orderStats?.byStatus.PENDING.count ?? 0,
+      APPROVED: orderStats?.byStatus.APPROVED.count ?? 0,
+      COMPLETED: orderStats?.byStatus.COMPLETED.count ?? 0,
+      CANCELLED: orderStats?.byStatus.CANCELLED.count ?? 0,
+    } as Record<OrderStatus, number>,
+  };
 
-    return {
-      totalOrders: ordersByDate.length,
-      totalValue,
-      validValue,
-      counts,
-    };
-  }, [ordersByDate]);
-
-  // [TV5 - CẬP NHẬT] Thứ tự hàng chờ FIFO toàn cục (tính từ toàn bộ orders để luôn khớp với C++ Engine)
-  const queueOrder = useMemo(
-    () =>
-      orders
-        .filter((o) => o.status === "PENDING")
-        .sort((x, y) => x.orderId - y.orderId)
-        .map((o) => o.orderId),
-    [orders],
-  );
+  // Thứ tự hàng chờ FIFO toàn cục (khớp với C++ Engine)
+  const queueOrder = useMemo(() => [...pendingIds].sort((x, y) => x - y), [pendingIds]);
 
   // [TV5 - CẬP NHẬT] Kết hợp lọc ngày + lọc trạng thái + tìm nhanh mã đơn/tên/SĐT, giữ thứ tự FIFO
   const shown = useMemo(() => {
@@ -364,6 +354,15 @@ export default function Admin() {
                         className="rounded-full border border-[#92566a] px-3 py-1 text-xs font-semibold text-[#92566a] disabled:opacity-50"
                       >
                         Hủy đơn
+                      </button>
+                    )}
+                    {(o.status === "CANCELLED" || o.status === "COMPLETED") && (
+                      <button
+                        onClick={() => handleDelete(o.orderId)}
+                        disabled={busy}
+                        className="rounded-full border border-[#b3261e] px-3 py-1 text-xs font-semibold text-[#b3261e] disabled:opacity-50"
+                      >
+                        Xóa đơn
                       </button>
                     )}
                     {o.status === "APPROVED" && (
