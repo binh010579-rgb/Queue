@@ -1,0 +1,126 @@
+<!-- ==========================================================================
+  admin.html - Giao diện Quản trị Đơn hàng (Admin Dashboard)
+  Phụ trách: TV5 (Dự án BeautyStore - Học phần CTDLGT)
+  Mô tả: Hiển thị danh sách đơn hàng, cung cấp nút "Xử lý đơn tiếp theo" gọi
+         thuật toán DEQ + Lazy Deletion và các nút đổi trạng thái để kiểm thử.
+=========================================================================== -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>BeautyStore - Admin Dashboard (TV5)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 920px; margin: 30px auto; padding: 0 16px; color: #1f2937; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .btn-primary { background: #2563eb; color: white; border: none; padding: 12px 20px; font-size: 15px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    .log-box { background: #f3f4f6; border-left: 4px solid #2563eb; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px; line-height: 1.5; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; }
+    th { background: #f9fafb; }
+    .badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .PENDING { background: #fef3c7; color: #92400e; }
+    .APPROVED { background: #d1fae5; color: #065f46; }
+    .CANCELLED { background: #fee2e2; color: #991b1b; }
+    .COMPLETED { background: #e0e7ff; color: #3730a3; }
+    button.small { padding: 5px 10px; font-size: 12px; cursor: pointer; margin-right: 4px; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; }
+    button.small:hover { background: #f3f4f6; }
+  </style>
+</head>
+<body>
+  <!-- KHU VỰC 1: Tiêu đề và nút kích hoạt thuật toán xử lý đơn tiếp theo -->
+  <div class="header">
+    <h2>Quản lý Đơn hàng – Admin Dashboard</h2>
+    <button id="btnProcessNext" class="btn-primary" onclick="processNextOrder()">
+      Xử lý đơn tiếp theo (DEQ)
+    </button>
+  </div>
+
+  <!-- KHU VỰC 2: Hộp hiển thị nhật ký xử lý & các đơn bị bỏ qua (Lazy Deletion) -->
+  <div id="logBox" class="log-box">Sẵn sàng xử lý đơn hàng theo hàng đợi FIFO.</div>
+
+  <!-- KHU VỰC 3: Bảng danh sách đơn hàng từ Database -->
+  <table>
+    <thead>
+      <tr>
+        <th>Mã đơn</th>
+        <th>Khách hàng</th>
+        <th>Tổng tiền</th>
+        <th>Thời gian tạo</th>
+        <th>Trạng thái</th>
+        <th>Thao tác cập nhật (Demo / Test)</th>
+      </tr>
+    </thead>
+    <tbody id="orderTable"></tbody>
+  </table>
+
+  <script>
+    // [Hàm 1] Tải danh sách đơn hàng từ GET /api/admin/orders và vẽ lại bảng
+    async function loadOrders() {
+      const res = await fetch('/api/admin/orders');
+      const orders = await res.json();
+      const tbody = document.getElementById('orderTable');
+
+      tbody.innerHTML = orders.map(o => `
+        <tr>
+          <td><strong>#${o.id}</strong></td>
+          <td>${o.customer}</td>
+          <td>${o.total.toLocaleString('vi-VN')} đ</td>
+          <td>${o.created_at}</td>
+          <td><span class="badge ${o.status}">${o.status}</span></td>
+          <td>
+            <button class="small" onclick="updateStatus(${o.id}, 'CANCELLED')">Hủy đơn</button>
+            <button class="small" onclick="updateStatus(${o.id}, 'COMPLETED')">Hoàn tất</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // [Hàm 2] Gọi API xử lý đơn tiếp theo (có khóa nút tạm thời chống bấm đúp chuột)
+    async function processNextOrder() {
+      const btn = document.getElementById('btnProcessNext');
+      btn.disabled = true;
+      btn.textContent = 'Đang xử lý...';
+
+      try {
+        const res = await fetch('/api/admin/orders/process-next', { method: 'POST' });
+        const data = await res.json();
+
+        const skippedText = data.skippedIds?.length
+          ? `<br><small>↳ Đã tự động bỏ qua (Lazy Deletion) các đơn không hợp lệ: <b>#${data.skippedIds.join(', #')}</b></small>`
+          : '';
+        document.getElementById('logBox').innerHTML = `<strong>Kết quả:</strong> ${data.message}${skippedText}`;
+        await loadOrders();
+      } catch (err) {
+        document.getElementById('logBox').innerHTML = `<strong>Lỗi kết nối:</strong> ${err.message}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Xử lý đơn tiếp theo (DEQ)';
+      }
+    }
+
+    // [Hàm 3] Cập nhật trạng thái một đơn hàng cụ thể và hiển thị thông báo phản hồi
+async function updateStatus(id, status) {
+  try {
+    const res = await fetch(`/api/admin/orders/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Cập nhật thất bại');
+
+    document.getElementById('logBox').innerHTML =
+      `<strong>Thông báo:</strong> Đã chuyển đơn hàng <b>#${id}</b> sang trạng thái <b>${status}</b>.`;
+    await loadOrders();
+  } catch (err) {
+    document.getElementById('logBox').innerHTML =
+      `<strong>Lỗi:</strong> ${err.message} (Kiểm tra lại server trong Terminal)`;
+  }
+}
+    // Tự động tải dữ liệu ngay khi mở trang
+    loadOrders();
+  </script>
+</body>
+</html>
