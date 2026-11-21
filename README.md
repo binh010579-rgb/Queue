@@ -54,6 +54,8 @@ Trạng thái đơn: `PENDING` → `APPROVED` → `COMPLETED`, hoặc `PENDING` 
 
 Cần: **g++ (C++17)**, **Node.js 18+**, **MySQL 8**.
 
+> **Windows:** dùng PowerShell. Mở terminal ở thư mục gốc của project (thư mục chứa `frontend`, `backend`, `queue-engine`). Gõ `dir` để kiểm tra phải thấy 3 thư mục này. File zip tải từ GitHub hay bị lồng thư mục (`Queue-main\Queue-main\...`), nên có thể phải `cd` thêm một cấp.
+
 ### Bước 1 – Biên dịch Queue Engine
 
 ```bash
@@ -61,13 +63,34 @@ cd queue-engine
 g++ -std=c++17 -O2 -Wall -Wextra -o queue_engine src/queue_engine.cpp
 ```
 
+Không in gì là thành công. Windows sẽ tạo `queue_engine.exe`.
+
 ### Bước 2 – Tạo Database
+
+**Cách A – MySQL Workbench (dễ nhất trên Windows):** mở Workbench, tạo hai database `beautystore` và `beautystore_test` (utf8mb4, `utf8mb4_unicode_ci`), chọn `beautystore`, rồi mở lần lượt `backend/sql/01_tao_bang.sql`, `02_du_lieu_kiem_thu.sql`, `07_tao_chi_muc.sql` và bấm ⚡ (Execute).
+
+**Cách B – dòng lệnh** (`mysql` phải nằm trong PATH; nếu không, dùng đường dẫn đầy đủ tới `mysql.exe`):
 
 ```bash
 mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS beautystore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE DATABASE IF NOT EXISTS beautystore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
 cd backend
-mysql -u root -p --default-character-set=utf8mb4 beautystore -e "source sql/01_tao_bang.sql; source sql/07_tao_chi_muc.sql"
 ```
+
+Nạp từng file bằng chuyển hướng `<` (không dùng `-e "source a; source b"` vì lệnh `source` thứ hai bị gửi lên server như SQL và báo `ERROR 1064`):
+
+```bash
+# Linux / macOS / Git Bash
+mysql -u root -p --default-character-set=utf8mb4 beautystore < sql/01_tao_bang.sql
+mysql -u root -p --default-character-set=utf8mb4 beautystore < sql/02_du_lieu_kiem_thu.sql
+mysql -u root -p --default-character-set=utf8mb4 beautystore < sql/07_tao_chi_muc.sql
+
+# Windows PowerShell (toán tử < không dùng được trực tiếp, đi qua cmd)
+cmd /c "mysql -u root -p --default-character-set=utf8mb4 beautystore < sql\01_tao_bang.sql"
+cmd /c "mysql -u root -p --default-character-set=utf8mb4 beautystore < sql\02_du_lieu_kiem_thu.sql"
+cmd /c "mysql -u root -p --default-character-set=utf8mb4 beautystore < sql\07_tao_chi_muc.sql"
+```
+
+Thứ tự: `01` (bảng) → `02` (dữ liệu mẫu: 9 sản phẩm, 16 đơn, 20 dòng đơn; **xóa dữ liệu cũ**) → `07` (chỉ mục, chạy sau khi đã có bảng). Cuối `07` in ra danh sách chỉ mục của bảng `orders`, đó không phải lỗi.
 
 ### Bước 3 – Chạy Backend
 
@@ -83,6 +106,15 @@ Mở `.env`, điền `DB_PASSWORD`. Biến `QUEUE_ENGINE_PATH` đã điền sẵ
 npm start                   # http://127.0.0.1:8080/api
 ```
 
+Khi chạy đúng, terminal in ra hai dòng:
+
+```
+[queue] Đã kết nối Queue Engine và nạp lại đơn PENDING
+BeautyStore API chạy tại http://127.0.0.1:8080/api
+```
+
+Nếu chỉ thấy dòng thứ hai kèm `[queue] Không khởi động được Queue Engine: ...` thì server vẫn chạy nhưng **hàng chờ không hoạt động** (xem mục "Lỗi thường gặp").
+
 | Biến `.env` | Ý nghĩa |
 |---|---|
 | `PORT` | mặc định `8080` |
@@ -93,13 +125,39 @@ npm start                   # http://127.0.0.1:8080/api
 
 ### Bước 4 – Chạy Frontend
 
+Mở **một cửa sổ terminal mới** (giữ nguyên terminal backend đang chạy):
+
 ```bash
 cd frontend
 npm install
 npm run dev                 # http://localhost:5173
 ```
 
-Frontend gọi API tại `http://127.0.0.1:8080/api` (đổi bằng biến `VITE_API_URL`).
+Frontend gọi API tại `http://127.0.0.1:8080/api` (đổi bằng biến `VITE_API_URL`). Trang Admin: `http://localhost:5173/#/admin`.
+
+### Kịch bản demo nhanh (khoảng 3 phút)
+
+1. Mở `http://localhost:5173`, đặt 2 đơn bằng cùng một số điện thoại (ví dụ `0901234567`).
+2. Mở trang Admin: hai đơn mới ở trạng thái **Chờ xử lý**, hiện "Kế tiếp ▶" và "Lượt 2" (đúng thứ tự FIFO).
+3. Bấm **Hủy đơn** ở đơn thứ nhất, rồi **Xử lý đơn tiếp theo**: hệ thống bỏ qua đơn đã hủy (thông báo "bỏ qua 1 đơn đã hủy") và duyệt đơn thứ hai.
+4. Bấm **Hoàn thành** ở đơn vừa duyệt. Các thẻ thống kê (tổng số đơn, tổng giá trị, số đơn theo trạng thái) cập nhật theo.
+5. Chọn **Ngày tạo** để lọc đơn theo ngày; chọn bộ lọc trạng thái để xem danh sách theo trạng thái.
+6. Bấm **Xóa đơn** ở đơn Hoàn thành hoặc Đã hủy (có hộp xác nhận).
+7. Trở lại trang khách, nhập số điện thoại để tra cứu lịch sử đơn.
+
+### Lỗi thường gặp
+
+| Thông báo | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| `Cannot find path ... because it does not exist` (`cd`) | Sai thư mục hoặc gõ sai tên | Gõ `dir` xem tên thật; dùng phím Tab để tự điền tên |
+| `src/queue_engine.cpp: No such file or directory` | Đang đứng sai thư mục khi chạy `g++` | `cd queue-engine` trước, rồi mới `g++ ...` |
+| `'mysql' is not recognized` | Windows không tìm thấy `mysql.exe` | Dùng MySQL Workbench (Cách A), hoặc thêm thư mục `bin` của MySQL vào PATH, hoặc gọi bằng đường dẫn đầy đủ |
+| `ERROR 1064 ... near 'source sql/...'` | Đặt nhiều `source` trong `-e "..."` | Nạp từng file bằng `<` như Bước 2 |
+| `ERROR 1045 Access denied` | Sai mật khẩu MySQL | Nhập lại; `DB_PASSWORD` trong `.env` cũng phải đúng |
+| `ECONNREFUSED` / `Can't connect to MySQL` | MySQL chưa chạy | Bật dịch vụ MySQL80 |
+| `[queue] Không khởi động được Queue Engine` | Chưa biên dịch Engine hoặc `QUEUE_ENGINE_PATH` sai | Làm lại Bước 1; kiểm tra đường dẫn (Windows có `.exe`) |
+| Frontend báo lỗi tải danh sách / tạo đơn | Backend chưa chạy hoặc khác cổng | Kiểm tra `http://127.0.0.1:8080/api/orders/pending` mở được; đồng bộ `PORT` và `VITE_API_URL` |
+| `Chỉ xóa được đơn đã hủy hoặc đã hoàn thành` | Xóa đơn đang PENDING hoặc APPROVED | Hủy hoặc hoàn thành đơn trước |
 
 ## 4. API
 
@@ -114,9 +172,11 @@ Lỗi luôn có dạng `{ "message": "...", "code": "...", "details": ... }`.
 | POST | `/api/orders/process-next` | Admin: duyệt đơn tiếp theo |
 | POST | `/api/orders/:id/cancel` | Hủy đơn (chỉ PENDING) |
 | POST | `/api/orders/:id/complete` | Hoàn thành đơn (chỉ APPROVED) |
-| GET | `/api/admin/orders?status=` | Admin: toàn bộ đơn, lọc theo trạng thái |
+| DELETE | `/api/orders/:id` | Xóa đơn (chỉ đơn CANCELLED hoặc COMPLETED, ngược lại `409 ORDER_NOT_DELETABLE`) |
+| GET | `/api/admin/orders?status=&from=&to=` | Admin: toàn bộ đơn, lọc theo trạng thái và ngày tạo (`from`, `to` dạng `YYYY-MM-DD`, gồm cả ngày `to`) |
+| GET | `/api/admin/stats?from=&to=` | Admin: thống kê tổng số đơn, tổng giá trị, giá trị hợp lệ (không tính đơn hủy) và số đơn, giá trị theo từng trạng thái |
 
-Mã lỗi thường gặp: `400 VALIDATION_ERROR`, `400 INVALID_JSON`, `400 BAD_ID`, `404 ORDER_NOT_FOUND`, `422 PRODUCT_NOT_AVAILABLE`, `500 INTERNAL_ERROR`.
+Mã lỗi thường gặp: `400 VALIDATION_ERROR`, `400 INVALID_JSON`, `400 BAD_ID`, `404 ORDER_NOT_FOUND`, `409 INVALID_STATUS`, `409 ORDER_NOT_DELETABLE`, `422 PRODUCT_NOT_AVAILABLE`, `500 INTERNAL_ERROR`.
 
 Ví dụ body tạo đơn:
 
@@ -205,7 +265,8 @@ g++ -std=c++17 -o test_dequeue tests/test_dequeue.cpp && ./test_dequeue         
 # kiểm tra bộ nhớ: thêm -fsanitize=address,undefined -g (hoặc chạy Valgrind)
 
 # Backend (trong backend/)
-npm test                              # validator, processNext, route admin; test tích hợp cần MySQL
+npm test                              # validator, processNext; test tích hợp cần MySQL
+node --test tests/adminRoute.test.js  # route admin (chưa nằm trong npm test)
 node tests/try-engine.js              # nạp, ENQ, duyệt, PEEK, ID sai, giết Engine rồi tự khôi phục
 node tests/stress.js                  # 200 ENQ + 100 duyệt đồng thời, treo, phản hồi lạ, sai đường dẫn, ID sai
 node benchmark/bench-cost.js          # Engine thường trực vs tiến trình mới mỗi request
@@ -235,11 +296,12 @@ Chi phí gọi tiến trình (đo trên máy Linux của người soạn, **nên
 | TV2 | Giao diện thanh toán/đặt hàng; kiểm tra bộ nhớ Queue Engine (ASan/UBSan, Valgrind: 0 lỗi, 0 rò rỉ) |
 | TV3 | API tạo/tra cứu đơn, lọc và sắp xếp đơn PENDING, chỉ mục, EXPLAIN, dữ liệu kiểm thử |
 | TV4 | Queue Engine C++ (danh sách liên kết đơn) và giao thức lệnh |
-| TV5 | Admin: xử lý đơn tiếp theo, hủy, hoàn thành, danh sách đơn |
+| TV5 | Admin: xử lý đơn tiếp theo, hủy, hoàn thành, xóa đơn, danh sách đơn theo trạng thái, thống kê, tìm đơn theo ngày tạo |
 | TV6 | Tích hợp Backend với Engine: kiểm soát kết quả, khôi phục, chống xử lý trùng |
 
 ## 11. Hạn chế đã biết
 
+- Ngày tạo khi lọc do MySQL xác định theo múi giờ của server, nên đơn tạo sát nửa đêm có thể nằm ở ngày khác so với giờ trên máy người dùng.
 - Chưa có bằng chứng chạy trọn luồng với MySQL thật (đặt hàng → duyệt → hủy/hoàn thành); cần chạy `npm test` với `TEST_DB_NAME` trước khi nộp.
 - Số liệu benchmark chi phí tiến trình cần đo lại trên máy nhóm.
 - Engine không kiểm tra trùng id; Backend chịu trách nhiệm không `ENQ` trùng.
